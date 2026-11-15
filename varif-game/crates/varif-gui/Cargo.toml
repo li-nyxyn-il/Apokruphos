@@ -1,0 +1,10 @@
+[package]
+name = "varif-gui"
+version.workspace = true
+edition.workspace = true
+description = "A simple desktop window for the Varif world model, built on egui."
+
+[dependencies]
+varif-core = { path = "../varif-core" }
+eframe = "0.37"
+ron.workspace = true

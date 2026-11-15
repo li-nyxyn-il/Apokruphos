@@ -1,7 +1,12 @@
-// The first leg of the Pylgrymage: Yhlgrym to Atzhaim.
+// The first leg of the Pylgrymage, Yhlgrym to Atzhaim, and the lands around
+// it: Shentzlia, Maphlia, the bay of Aphlora and the nearer Triadyk coast.
 //
-// Names, Krypts, rites and nedias come from "the city temples.txt" and the
-// map. Everything marked ASSUMPTION is a placeholder to replace.
+// Names, Krypts, rites and nedias come from "the city temples.txt", the map
+// and the vault notes. Everything marked ASSUMPTION is a placeholder to replace.
+//
+// The places and roads follow the map as drawn in "Triadic-Atzchil Region
+// Updates.psdc" (the screenshot of 31 May 2026). Places are spelled as the
+// map labels them.
 #![enable(implicit_some)]
 (
     start: (
@@ -27,6 +32,14 @@
                 rite: "Holy Oath and Unification Ceremony",
                 nedia: ["History", "Ecumenycal monology"],
             ),
+            sites: [
+                (key: "gate", name: "North Gate", kind: Gate), // ASSUMPTION: one gate for both roads.
+                (key: "krypt", name: "Krypt of Grymsiere", kind: Temple),
+                (key: "nedia", name: "Nedia Hyl", kind: Nedia), // The towers and courtyards on the nedia hyl.
+                (key: "court", name: "City Court", kind: Court),
+                (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
+                (key: "farms", name: "Farms", kind: Landmark), // The farms scattered about the Krypt.
+            ],
         ),
         (
             key: "falls",
@@ -58,16 +71,447 @@
                 // Burned by Felydian and not yet restored.
                 ruined: true,
             ),
+            sites: [
+                // ASSUMPTION: which gate faces which road.
+                (key: "south-gate", name: "South Gate", kind: Gate, faces: ["falls", "hylhaim", "heedhaim"]),
+                (key: "west-gate", name: "West Gate", kind: Gate, faces: ["drazihaim", "atzchhelm-ivhaan"]),
+                (key: "krypt", name: "Krypt of Phionyx", kind: Temple), // A lone cathedral on a butte at the city's heart.
+                (key: "nedia", name: "Nedia Floor", kind: Nedia), // "The largest nedia floor in all the Umbara."
+                (key: "library", name: "Library", kind: Landmark),
+                (key: "hospital", name: "Hospital", kind: Landmark),
+                (key: "docks", name: "Lake Docks", kind: Landmark),
+                (key: "drake", name: "Krypt of Drake", kind: Temple), // "Just beyond the Inner Wall."
+                (key: "khaska", name: "Krypt of Khaska", kind: Temple), // In the second district.
+                (key: "khodos", name: "Krypt of Khodos", kind: Temple), // In the second district.
+                (key: "ilys", name: "Krypt of Ilys", kind: Temple),
+                (key: "court", name: "City Court", kind: Court),
+                (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
+                (key: "market", name: "Market", kind: Market), // ASSUMPTION
+            ],
+        ),
+
+        // Beyond the first leg. These come from the character and Beyond
+        // notes in the vault; where they sit on the map is mostly guessed.
+        (
+            // The Krypt of Drake, home of the Hylvannus Kraiark of Law. Also
+            // written Drazihaim Hylhelm and Drazilhaim-Hylhelm; the 2024
+            // notes put the Temple of Drake at Cascadia, in the northwestern
+            // Shentzlian valley.
+            key: "drazihaim",
+            name: "Drazihaim",
+            kind: TempleCity,
+            region: Shentzlia,
+            temple: (
+                krypt_of: "Drake",
+                nedia: ["Law"],
+            ),
+            sites: [
+                (key: "gate", name: "Gate", kind: Gate), // ASSUMPTION
+                (key: "krypt", name: "Krypt of Drake", kind: Temple), // Home of the Hylvannus Kraiark of Law.
+                (key: "nedia", name: "Nedia of Law", kind: Nedia),
+                (key: "court", name: "City Court", kind: Court),
+                (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
+            ],
+        ),
+        (
+            // "The Raven's nest", atop the Hyl'nuizt Eltzi at the northernmost
+            // finger of the Great Valley of Shentz. Choratzch and Koratzch in
+            // older notes. Hesseh trained at its nedia.
+            key: "khoratzh",
+            name: "Khoratzh",
+            kind: TempleCity,
+            region: Shentzlia,
+            temple: (
+                krypt_of: "Khaska",
+            ),
+            sites: [
+                (key: "gate", name: "Gate", kind: Gate), // ASSUMPTION
+                (key: "krypt", name: "Krypt of Khaska", kind: Temple), // "The Raven's nest", atop the Hyl'nuizt Eltzi.
+                (key: "nedia", name: "Nedia", kind: Nedia), // Where Hesseh trained.
+                (key: "court", name: "City Court", kind: Court),
+            ],
+        ),
+        (
+            // Seat of Havil Audsen, Governor of Phorva, and home of the
+            // Audsen-Dane household. Its inner district holds a Krypt of
+            // Khaska with the Khaskylil's tower. Not a city of the Road.
+            key: "maphlamar",
+            name: "Maphlamar",
+            kind: Town,
+            region: Maphlia,
+            temple: (
+                krypt_of: "Khaska",
+            ),
+            sites: [
+                (key: "gate", name: "Gate", kind: Gate), // ASSUMPTION
+                (key: "krypt", name: "Krypt of Khaska", kind: Temple), // In the inner district: towers, a library, a cathedral.
+                (key: "tower", name: "Khaskylil's Tower", kind: Landmark),
+                (key: "estate", name: "Audsen-Dane Estate", kind: Residence), // Shared by the Dane and Audsen Lines, with gardens.
+                (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
+                (key: "market", name: "Market", kind: Market), // ASSUMPTION
+            ],
+        ),
+        (
+            // Seat of the Grymsol Pynumbros of Maphlia (the Line of Field).
+            // Its Krypt of Khaska and Library enclose the city's nedia.
+            // Spelled Clate in the list of the towns of Maphlia.
+            key: "klate",
+            name: "Klate",
+            kind: Town,
+            region: Maphlia,
+            temple: (
+                krypt_of: "Khaska",
+            ),
+            sites: [
+                (key: "gate", name: "Gate", kind: Gate), // ASSUMPTION
+                (key: "seat", name: "Seat of the Pynumbros", kind: Palace), // Of the Line of Field.
+                (key: "krypt", name: "Krypt of Khaska", kind: Temple),
+                (key: "library", name: "Library of Klate", kind: Landmark),
+                (key: "nedia", name: "Nedia", kind: Nedia), // Enclosed by the Krypt and the Library.
+                (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
+            ],
+        ),
+        (
+            // Halion Dane is its Prefect.
+            key: "seawalt",
+            name: "The Seawalt",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            // A town of Yhlmahni. The region is left out: Yhlmahni is not one
+            // of the four Pynumbra.
+            key: "sthepenhall",
+            name: "Sthepenhall",
+            kind: Town,
+        ),
+
+        // ---- Added from the map. None of these has sites yet. ----
+
+        // Shentzlia, the Great Valley.
+        (
+            // On the east shore of the Atzch Lake.
+            key: "atzch-midili",
+            name: "Atzch-Midili",
+            kind: Town,
+            region: Shentzlia,
+        ),
+        (
+            key: "coplahaim",
+            name: "Coplahaim",
+            kind: Town,
+            region: Shentzlia,
+        ),
+        (
+            // Atzchelm-Ivhaan in the list of the towns of Shentzlia.
+            key: "atzchhelm-ivhaan",
+            name: "Atzchhelm-Ivhaan",
+            kind: Town,
+            region: Shentzlia,
+        ),
+        (
+            // A keep upriver of the Great Valley. The map draws no road to it.
+            key: "bluestone",
+            name: "Bluestone",
+            kind: Landmark,
+            region: Shentzlia,
+        ),
+
+        // The Triadyk coast of Ptormia (Vhinhelm in the old lists).
+        (
+            // The southernmost town of Ptormia.
+            key: "ulugrozt",
+            name: "Ulugrozt",
+            kind: Town,
+            region: Ptormia,
+        ),
+        (
+            key: "vhimyst",
+            name: "Vhimyst",
+            kind: Town,
+            region: Ptormia,
+        ),
+        (
+            key: "trystzor",
+            name: "Trystzor",
+            kind: Town,
+            region: Ptormia,
+        ),
+        (
+            // In the mountains north of Khoratzh.
+            key: "vinniv-pti",
+            name: "Vinniv'pti",
+            kind: Town,
+            region: Ptormia,
+        ),
+
+        // Aphlora, the lowlands around the bay. The old list of the towns of
+        // Maphlia holds Bahour-Ilos, Sima, Hila, Idra and Ebyni; they are put
+        // in Aphlora here because Bahour-Ilos is Aphlora's southwesternmost
+        // city and Maphlia ends at Rhait.
+        (
+            key: "bahour-ilos",
+            name: "Bahour-Ilos",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "sima",
+            name: "Sima",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "hila",
+            name: "Hila",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "idra",
+            name: "Idra",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "ebyni",
+            name: "Ebyni",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "allenia",
+            name: "Allenia",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "vormia",
+            name: "Vormia",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "porthelm",
+            name: "Porthelm",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            // At the head of the bay.
+            key: "stonesteps",
+            name: "Stonesteps",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            // The Umbral seat since Felydian moved it here.
+            key: "penhyla",
+            name: "Penhyla",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            key: "ebynshor",
+            name: "Ebynshor",
+            kind: Town,
+            region: Aphlora,
+        ),
+        (
+            // In the mountains north of the bay.
+            key: "lytzvia",
+            name: "Lytzvia",
+            kind: Town,
+            region: Aphlora,
+        ),
+
+        // Maphlia, the Maphyk plateau.
+        (
+            key: "pheo",
+            name: "Pheo",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "edun",
+            name: "Edun",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "laad",
+            name: "Laad",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "hases",
+            name: "Hases",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "myvus",
+            name: "Myvus",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "vlenen",
+            name: "Vlenen",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "corvus",
+            name: "Corvus",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            key: "iden",
+            name: "Iden",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            // Dannon in the list of the towns of Maphlia.
+            key: "danon",
+            name: "Danon",
+            kind: Town,
+            region: Maphlia,
+        ),
+        (
+            // The northeasternmost city of Maphlia.
+            key: "rhait",
+            name: "Rhait",
+            kind: Town,
+            region: Maphlia,
+        ),
+
+        // Beyond the four Pynumbra, so the region is left out: Yhlmahni down
+        // the Yhl, and the Koloudian shore below the cliffs.
+        (
+            key: "ayin-lil",
+            name: "Ayin'lil",
+            kind: Town,
+        ),
+        (
+            // At the bottom edge of the screenshot; its place on the map is rough.
+            key: "nihuloz",
+            name: "Nihuloz",
+            kind: Town,
+        ),
+        (
+            key: "ayn-daiun",
+            name: "Ayn'daiun",
+            kind: Town,
+        ),
+        (
+            key: "narhutz",
+            name: "Narhutz",
+            kind: Town,
         ),
     ],
 
-    // ASSUMPTION: every distance and encounter chance below. The order of
-    // the stops follows the road as drawn on the map.
+    // The roads follow the map. Where three roads meet at a fork with no town
+    // (the map has five), each pair of towns is given its own road through it.
+    //
+    // ASSUMPTION: every distance and encounter chance below. Distances marked
+    // "older" were set before the map was traced and are left as they were.
+    // The rest are measured on the map at about 11 pixels of the map image to
+    // a league, the scale the older Maphlamar-Seawalt and Atzhaim-Drazihaim
+    // distances imply, with something added for a winding road.
     roads: [
-        (from: "yhlgrym", to: "falls", leagues: 5, encounter_chance: 10),
-        (from: "falls", to: "hylhaim", leagues: 14, encounter_chance: 25),
-        (from: "hylhaim", to: "heedhaim", leagues: 11, encounter_chance: 20),
-        (from: "heedhaim", to: "atzhaim", leagues: 6, encounter_chance: 15),
+        // ---- The Great Atzch Road and the Great Valley ----
+        (from: "yhlgrym", to: "falls", leagues: 5, encounter_chance: 10), // older
+        // The road up the canyon of the Yhl. An unnamed place is drawn on it
+        // a little above the falls. Hylhaim-Shentzli is not on this road.
+        (from: "falls", to: "atzhaim", leagues: 17, encounter_chance: 25),
+        (from: "heedhaim", to: "atzhaim", leagues: 6, encounter_chance: 15), // older
+        // Hylhaim-Shentzli's road ends at a fork on the south shore of the
+        // lake, between Atzhaim and Heedhaim.
+        (from: "hylhaim", to: "heedhaim", leagues: 11, encounter_chance: 20), // older
+        (from: "hylhaim", to: "atzhaim", leagues: 11, encounter_chance: 20),
+        // Up the west shore to a fork at the head of the lake, where the roads
+        // to Drazihaim and Atzchhelm-Ivhaan part.
+        (from: "atzhaim", to: "drazihaim", leagues: 14, encounter_chance: 20), // older
+        (from: "atzchhelm-ivhaan", to: "atzhaim", leagues: 17, encounter_chance: 20),
+        (from: "atzchhelm-ivhaan", to: "drazihaim", leagues: 20, encounter_chance: 20),
+        (from: "drazihaim", to: "khoratzh", leagues: 12, encounter_chance: 20), // older
+        // Up the east shore to Coplahaim, where the road ends.
+        (from: "heedhaim", to: "atzch-midili", leagues: 6, encounter_chance: 15),
+        (from: "atzch-midili", to: "coplahaim", leagues: 9, encounter_chance: 15),
+
+        // ---- Yhlmahni and the south road of Maphlia ----
+        // ASSUMPTION: Yhlgrym is not on the map; it stands here on the road
+        // between Sthepenhall and the falls.
+        (from: "yhlgrym", to: "sthepenhall", leagues: 9, encounter_chance: 20), // older
+        (from: "sthepenhall", to: "ayin-lil", leagues: 5, encounter_chance: 20),
+        (from: "ayin-lil", to: "nihuloz", leagues: 6, encounter_chance: 20),
+        // Aiden rides from Maphlamar to Klate, then on to the Falls, where he
+        // meets Emanda: by Corvus, the south road and Sthepenhall.
+        (from: "sthepenhall", to: "pheo", leagues: 9, encounter_chance: 15),
+        (from: "pheo", to: "edun", leagues: 2, encounter_chance: 15),
+        (from: "edun", to: "laad", leagues: 2, encounter_chance: 15),
+        (from: "laad", to: "hases", leagues: 4, encounter_chance: 15),
+        (from: "hases", to: "klate", leagues: 3, encounter_chance: 15),
+        (from: "klate", to: "corvus", leagues: 10, encounter_chance: 15),
+        (from: "corvus", to: "maphlamar", leagues: 3, encounter_chance: 10),
+
+        // ---- Maphlia's coast ----
+        (from: "maphlamar", to: "seawalt", leagues: 8, encounter_chance: 15), // older
+        (from: "seawalt", to: "danon", leagues: 6, encounter_chance: 15),
+        (from: "seawalt", to: "rhait", leagues: 7, encounter_chance: 15),
+        (from: "rhait", to: "ebyni", leagues: 5, encounter_chance: 15),
+
+        // ---- Aphlora ----
+        (from: "maphlamar", to: "sima", leagues: 12, encounter_chance: 15),
+        (from: "sima", to: "hila", leagues: 1, encounter_chance: 5),
+        // East of Hila the road forks, to Idra and to Ebyni.
+        (from: "hila", to: "idra", leagues: 6, encounter_chance: 10),
+        (from: "hila", to: "ebyni", leagues: 7, encounter_chance: 15),
+        (from: "idra", to: "ebyni", leagues: 9, encounter_chance: 15),
+        (from: "sima", to: "allenia", leagues: 7, encounter_chance: 10),
+        (from: "allenia", to: "vormia", leagues: 4, encounter_chance: 10),
+        // East of Vormia the road forks, to Stonesteps and to Porthelm.
+        (from: "vormia", to: "stonesteps", leagues: 10, encounter_chance: 15),
+        (from: "vormia", to: "porthelm", leagues: 9, encounter_chance: 15),
+        (from: "stonesteps", to: "porthelm", leagues: 14, encounter_chance: 15),
+        // North-east of Stonesteps three roads meet: from Stonesteps, from
+        // Lytzvia and from Penhyla. A fourth runs on east off the screenshot.
+        (from: "stonesteps", to: "penhyla", leagues: 22, encounter_chance: 15),
+        (from: "stonesteps", to: "lytzvia", leagues: 22, encounter_chance: 20),
+        (from: "lytzvia", to: "penhyla", leagues: 25, encounter_chance: 20),
+        (from: "penhyla", to: "ebynshor", leagues: 7, encounter_chance: 10),
+
+        // ---- The Triadyk coast ----
+        // This road joins nothing else on the screenshot. It runs on
+        // north-east from Trystzor.
+        (from: "ulugrozt", to: "vhimyst", leagues: 5, encounter_chance: 15),
+        (from: "vhimyst", to: "trystzor", leagues: 5, encounter_chance: 15),
+        // Not drawn on the map: Vinniv'pti is joined to Trystzor for now.
+        (from: "trystzor", to: "vinniv-pti", leagues: 4, encounter_chance: 20),
+
+        // ---- Lesser roads, drawn thinner on the map ----
+        (from: "klate", to: "myvus", leagues: 3, encounter_chance: 20),
+        (from: "myvus", to: "vlenen", leagues: 5, encounter_chance: 20),
+        (from: "vlenen", to: "iden", leagues: 5, encounter_chance: 20),
+        (from: "iden", to: "seawalt", leagues: 5, encounter_chance: 20),
+        (from: "corvus", to: "iden", leagues: 4, encounter_chance: 20),
+        (from: "corvus", to: "vlenen", leagues: 3, encounter_chance: 20),
+        (from: "vlenen", to: "danon", leagues: 9, encounter_chance: 25),
+        // A track over the hills with switchbacks. Hesseh passes through
+        // Drazihaim on his way to Maphlamar: by Atzhaim, Heedhaim and this.
+        (from: "heedhaim", to: "maphlamar", leagues: 22, encounter_chance: 35),
+        // Over the mountains from the Great Valley into Aphlora, then down
+        // the river to Sima.
+        (from: "atzch-midili", to: "bahour-ilos", leagues: 16, encounter_chance: 30),
+        (from: "bahour-ilos", to: "sima", leagues: 9, encounter_chance: 25),
+        // The road along the foot of the cliffs, between the Maphyk plateau
+        // and the Koloudian desert. It runs on east from Narhutz.
+        (from: "sthepenhall", to: "ayn-daiun", leagues: 23, encounter_chance: 30),
+        (from: "ayn-daiun", to: "narhutz", leagues: 9, encounter_chance: 30),
     ],
 
     people: [

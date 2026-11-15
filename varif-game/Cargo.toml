@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/varif-core", "crates/varif-cli"]
+members = ["crates/varif-core", "crates/varif-cli", "crates/varif-gui"]
+# What plain `cargo build`, `cargo test` and `cargo run` act on. The window is
+# left out so that they stay quick; run it with `cargo run -p varif-gui`.
+default-members = ["crates/varif-core", "crates/varif-cli"]
 
 [workspace.package]
 version = "0.1.0"

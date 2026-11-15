@@ -15,6 +15,11 @@ pub struct PlaceId(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PersonId(pub u32);
 
+/// A location inside a place: the index into that place's `sites`. It only
+/// means something together with the place it belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SiteId(pub u32);
+
 impl PlaceId {
     pub fn index(self) -> usize {
         self.0 as usize
@@ -22,6 +27,12 @@ impl PlaceId {
 }
 
 impl PersonId {
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl SiteId {
     pub fn index(self) -> usize {
         self.0 as usize
     }

@@ -5,14 +5,26 @@
 
 use std::io::{self, BufRead, Write};
 use std::{env, fs, process};
-use varif_core::{load_world, Command, Event, World};
+use varif_core::{load_world, Command, Event, Itinerary, Place, PlaceId, World};
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
+/// A map with many loops has hundreds of ways between two places. Only this
+/// many, the quickest, are offered.
+const MAX_WAYS: usize = 5;
 
 const HELP: &str = "\
 Commands:
   look            describe where the party is and where the roads lead
-  go <place>      travel to a neighbouring place, by key or by name
+  go <place>      travel to a place, by key or by name; if no road runs
+                  straight there you are offered the ways that lead there
+                  and asked before each leg (y/n); on a walk of several
+                  days you are asked each night whether to make camp (y/n)
+  map             list every place the roads can take the party to
+  walk            list the places inside the city the party can walk to
+  walk <site>     walk to one of them, by key or by name
+  addplace <leagues> <name>
+                  put a new place on the map, a road of that many leagues
+                  from where the party stands
   camp            make camp and pass the night
   write <text>    add a journal entry
   journal         read the journal
@@ -41,8 +53,32 @@ fn main() {
     look(&world);
 
     let stdin = io::stdin();
+    let mut asking = Asking::Nothing;
+    // The stops still to come after the leg the party is walking now.
+    let mut heading: Vec<PlaceId> = Vec::new();
     loop {
-        print!("\n> ");
+        // Arrived at a stop on the way somewhere further: ask about the next leg.
+        if world.journey.is_none() && !heading.is_empty() && matches!(asking, Asking::Nothing) {
+            asking = Asking::NextStop {
+                stops: std::mem::take(&mut heading),
+                first_leg: false,
+            };
+        }
+
+        match &asking {
+            // Between days on the road the only question is whether to camp.
+            _ if world.journey.is_some() => print!("Make camp for the night? (y/n) "),
+            Asking::WhichWay(routes) => print!("Which way? (1-{}, or n to stay) ", routes.len()),
+            Asking::NextStop { stops, first_leg } => {
+                let name = world.place_name(stops[0]);
+                if *first_leg {
+                    print!("Travel to {name} first? (y/n) ");
+                } else {
+                    print!("Continue on to {name}? (y/n) ");
+                }
+            }
+            Asking::Nothing => print!("\n> "),
+        }
         io::stdout().flush().ok();
 
         let mut line = String::new();
@@ -51,6 +87,54 @@ fn main() {
             Ok(_) => {}
         }
         let line = line.trim();
+        let answer = line.to_lowercase();
+        if answer == "quit" || answer == "exit" {
+            break;
+        }
+
+        if world.journey.is_some() {
+            match answer.as_str() {
+                "y" | "yes" => {
+                    run(&mut world, Command::EndDay { camp: true });
+                }
+                "n" | "no" => {
+                    run(&mut world, Command::EndDay { camp: false });
+                }
+                _ => println!("Answer y to make camp or n to press on."),
+            }
+            continue;
+        }
+
+        match std::mem::replace(&mut asking, Asking::Nothing) {
+            Asking::Nothing => {}
+            Asking::WhichWay(routes) => {
+                match answer.parse::<usize>() {
+                    Ok(n) if (1..=routes.len()).contains(&n) => {
+                        let stops = routes[n - 1].stops.clone();
+                        println!("The party takes the way through {}.", through(&world, &stops));
+                        heading = set_out(&mut world, stops);
+                    }
+                    _ if answer == "n" || answer == "no" => stay(&world),
+                    _ => {
+                        println!("Answer with the number of a way, or n to stay.");
+                        asking = Asking::WhichWay(routes);
+                    }
+                }
+                continue;
+            }
+            Asking::NextStop { stops, first_leg } => {
+                match answer.as_str() {
+                    "y" | "yes" => heading = set_out(&mut world, stops),
+                    "n" | "no" => stay(&world),
+                    _ => {
+                        println!("Answer y or n.");
+                        asking = Asking::NextStop { stops, first_leg };
+                    }
+                }
+                continue;
+            }
+        }
+
         // Split "go Atzhaim" into the word "go" and the rest, "Atzhaim".
         let (word, rest) = match line.split_once(' ') {
             Some((word, rest)) => (word, rest.trim()),
@@ -63,12 +147,16 @@ fn main() {
             "help" => println!("{HELP}"),
             "look" => look(&world),
             "journal" => journal(&world),
-            "camp" => run(&mut world, Command::MakeCamp),
-            "write" => run(&mut world, Command::WriteJournal { text: rest.to_string() }),
-            "go" => match world.find_place(rest) {
-                Some(to) => run(&mut world, Command::Travel { to }),
-                None => println!("There is no place called \"{rest}\"."),
-            },
+            "map" => map(&world),
+            "walk" => walk(&mut world, rest),
+            "addplace" => add_place(&mut world, rest),
+            "camp" => {
+                run(&mut world, Command::MakeCamp);
+            }
+            "write" => {
+                run(&mut world, Command::WriteJournal { text: rest.to_string() });
+            }
+            "go" => asking = go(&mut world, rest),
             "save" if rest.is_empty() => println!("Save to which file?"),
             "save" => match world.to_ron() {
                 Ok(saved) => match fs::write(rest, saved) {
@@ -82,16 +170,114 @@ fn main() {
     }
 }
 
-/// Sends one command to the world and prints what happened.
-fn run(world: &mut World, command: Command) {
+/// A question the program is waiting for the player to answer.
+enum Asking {
+    Nothing,
+    /// Several ways lead to the place; the player picks one by number.
+    WhichWay(Vec<Itinerary>),
+    /// Walk to the first of these stops? The rest follow, one question each.
+    NextStop { stops: Vec<PlaceId>, first_leg: bool },
+}
+
+/// Sends one command to the world and prints what happened. True if the
+/// world accepted it.
+fn run(world: &mut World, command: Command) -> bool {
     match world.apply(command) {
         Ok(events) => {
             for event in &events {
                 println!("{}", describe(world, event));
             }
+            true
         }
-        Err(error) => println!("Refused: {error}."),
+        Err(error) => {
+            println!("Refused: {error}.");
+            false
+        }
     }
+}
+
+/// Handles "go <place>". Walks straight there when a road joins the two
+/// places; otherwise searches for the ways that lead there and asks.
+fn go(world: &mut World, rest: &str) -> Asking {
+    let Some(to) = world.find_place(rest) else {
+        println!("There is no place called \"{rest}\".");
+        return Asking::Nothing;
+    };
+    let here = world.party_at;
+    if to == here || world.road_between(here, to).is_some() {
+        run(world, Command::Travel { to });
+        return Asking::Nothing;
+    }
+
+    let (from_name, to_name) = (world.place_name(here), world.place_name(to));
+    let mut routes = world.routes_between(here, to);
+    let hidden = routes.len().saturating_sub(MAX_WAYS);
+    routes.truncate(MAX_WAYS);
+    match routes.len() {
+        0 => {
+            println!("No road leads from {from_name} to {to_name}, by any way.");
+            Asking::Nothing
+        }
+        1 => {
+            let route = routes.remove(0);
+            println!(
+                "No road runs straight from {from_name} to {to_name}. The way goes through {} ({}).",
+                through(world, &route.stops),
+                length(&route)
+            );
+            Asking::NextStop {
+                stops: route.stops,
+                first_leg: true,
+            }
+        }
+        n => {
+            if hidden == 0 {
+                println!("No road runs straight from {from_name} to {to_name}. There are {n} ways:");
+            } else {
+                println!("No road runs straight from {from_name} to {to_name}. The {n} quickest ways:");
+            }
+            for (i, route) in routes.iter().enumerate() {
+                println!(
+                    "  {}. through {}: {}",
+                    i + 1,
+                    through(world, &route.stops),
+                    length(route)
+                );
+            }
+            if hidden > 0 {
+                println!("  ({hidden} slower ways are not shown.)");
+            }
+            Asking::WhichWay(routes)
+        }
+    }
+}
+
+/// Starts the first leg of a route. Returns the stops still to come, or
+/// nothing if the world refused the leg.
+fn set_out(world: &mut World, stops: Vec<PlaceId>) -> Vec<PlaceId> {
+    let Some((&first, rest)) = stops.split_first() else {
+        return Vec::new();
+    };
+    if run(world, Command::Travel { to: first }) {
+        rest.to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
+fn stay(world: &World) {
+    println!("The party stays at {}.", world.place_name(world.party_at));
+}
+
+/// The places a route passes on the way, without its destination.
+fn through(world: &World, stops: &[PlaceId]) -> String {
+    let passed = &stops[..stops.len().saturating_sub(1)];
+    passed.iter().map(|&id| world.place_name(id)).collect::<Vec<_>>().join(", ")
+}
+
+fn length(route: &Itinerary) -> String {
+    let s = if route.days == 1 { "" } else { "s" };
+    format!("{} leagues, {} day{s}", route.leagues, route.days)
 }
 
 fn describe(world: &World, event: &Event) -> String {
@@ -103,9 +289,44 @@ fn describe(world: &World, event: &Event) -> String {
         ),
         Event::DayPassed { date } => format!("  {date}"),
         Event::RoadEncounter { .. } => "  Something meets the party on the road.".to_string(),
+        Event::NightFalls { to, days_left, .. } => format!(
+            "Night falls on the road, {} day{} from {}.",
+            days_left,
+            if *days_left == 1 { "" } else { "s" },
+            world.place_name(*to)
+        ),
+        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
+        Event::PressedOn { nights_without_camp, .. } => match nights_without_camp {
+            1 => "The party presses on through the night.".to_string(),
+            n => format!("The party presses on through the night, {n} nights without camp."),
+        },
         Event::Arrived { at, .. } => format!("The party arrives at {}.", world.place_name(*at)),
+        Event::EnteredBy { at, gate, .. } => {
+            format!("It comes in by the {}.", site_name(world.place(*at), *gate))
+        }
+        Event::Walked { at, from, to, .. } => {
+            let place = world.place(*at);
+            match from {
+                Some(from) => format!(
+                    "The party walks from the {} to the {}.",
+                    site_name(place, *from),
+                    site_name(place, *to)
+                ),
+                None => format!("The party walks to the {}.", site_name(place, *to)),
+            }
+        }
         Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
+        Event::PlaceAdded { place, from, leagues, .. } => {
+            let key = world.place(*place).map_or("?", |p| p.key.as_str());
+            format!(
+                "{} [{}] is added to the map, {} leagues from {}.",
+                world.place_name(*place),
+                key,
+                leagues,
+                world.place_name(*from)
+            )
+        }
     }
 }
 
@@ -127,6 +348,10 @@ fn look(world: &World) {
         if !temple.nedia.is_empty() {
             println!("  Nedia of {}", temple.nedia.join(", "));
         }
+    }
+    if let Some(site) = world.party_site {
+        println!("  The party stands at the {}.", site_name(Some(place), site));
+        println!("  Type walk to see where it can go in {}.", place.name);
     }
     for person in world.residents(here) {
         println!("  {} ({}) is here.", person.name, person.role);
@@ -150,4 +375,105 @@ fn journal(world: &World) {
         println!("{}, at {}", entry.date, world.place_name(entry.at));
         println!("  {}", entry.text);
     }
+}
+
+fn map(world: &World) {
+    let here = world.party_at;
+    println!("From {}:", world.place_name(here));
+
+    let routes = world.reachable(here);
+    if routes.is_empty() {
+        println!("  No road leads anywhere from here.");
+    }
+    for route in &routes {
+        let key = world.place(route.to).map_or("?", |p| p.key.as_str());
+        let way = if route.roads == 1 {
+            "road from here".to_string()
+        } else {
+            format!("{} roads, first to {}", route.roads, world.place_name(route.first_step))
+        };
+        let days = route.days;
+        println!(
+            "  {} [{}], {} leagues, {} day{} ({})",
+            world.place_name(route.to),
+            key,
+            route.leagues,
+            days,
+            if days == 1 { "" } else { "s" },
+            way
+        );
+    }
+
+    let cut_off: Vec<&str> = world
+        .places
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (PlaceId(i as u32), p))
+        .filter(|(id, _)| *id != here && !routes.iter().any(|r| r.to == *id))
+        .map(|(_, p)| p.name.as_str())
+        .collect();
+    if !cut_off.is_empty() {
+        println!("No road reaches: {}", cut_off.join(", "));
+    }
+}
+
+/// Reads "addplace <leagues> <name>" and sends the command.
+fn add_place(world: &mut World, rest: &str) {
+    const USAGE: &str = "Usage: addplace <leagues> <name>, for example: addplace 3 Old Mill Ford";
+    let (leagues, name) = match rest.split_once(' ') {
+        Some((leagues, name)) => (leagues, name.trim()),
+        None => (rest, ""),
+    };
+    let Ok(leagues) = leagues.parse::<u32>() else {
+        println!("{USAGE}");
+        return;
+    };
+    if name.is_empty() {
+        println!("{USAGE}");
+        return;
+    }
+    run(world, Command::AddPlace { name: name.to_string(), leagues });
+}
+
+/// Handles "walk" and "walk <site>".
+fn walk(world: &mut World, rest: &str) {
+    let Some(place) = world.place(world.party_at) else {
+        println!("The party is nowhere.");
+        return;
+    };
+    if place.sites.is_empty() {
+        println!("There is nowhere to walk to in {} yet.", place.name);
+        return;
+    }
+
+    if rest.is_empty() {
+        match world.party_site {
+            Some(here) => println!(
+                "In {} the party stands at the {}. It can walk to:",
+                place.name,
+                site_name(Some(place), here)
+            ),
+            None => println!("In {} the party can walk to:", place.name),
+        }
+        for (i, site) in place.sites.iter().enumerate() {
+            if world.party_site.map(|s| s.index()) != Some(i) {
+                println!("  {} [{}] ({:?})", site.name, site.key, site.kind);
+            }
+        }
+        return;
+    }
+
+    match place.find_site(rest) {
+        Some(to) => {
+            run(world, Command::Walk { to });
+        }
+        None => println!(
+            "There is no \"{rest}\" in {}. Type walk to see where the party can go.",
+            place.name
+        ),
+    }
+}
+
+fn site_name(place: Option<&Place>, id: varif_core::SiteId) -> &str {
+    place.and_then(|p| p.site(id)).map_or("an unknown spot", |s| s.name.as_str())
 }

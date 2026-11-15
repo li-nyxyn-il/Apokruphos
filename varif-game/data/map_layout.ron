@@ -1,0 +1,58 @@
+// Where each place sits on the map, for the window (varif-gui) to draw.
+// The rules of the world never read this file.
+//
+// Each entry is a place's key and its position on "Triadic-Atzchil
+// Region.png", in pixels from the top-left corner. The positions were
+// measured from the dots on the screenshot of the map at 200% and scaled
+// back to the image. A place with no entry here is drawn beside one of its
+// neighbours.
+{
+    // ASSUMPTION: Yhlgrym is not drawn on the map. This puts it on the road
+    // between Sthepenhall and the falls.
+    "yhlgrym": (1031, 1041),
+    "falls": (1045, 1022),
+    "hylhaim": (1133, 976),
+    "heedhaim": (1191, 933),
+    "atzhaim": (1150, 938),
+    "atzch-midili": (1200, 872),
+    "coplahaim": (1263, 799),
+    "atzchhelm-ivhaan": (1083, 882),
+    "bluestone": (1088, 835),
+    "drazihaim": (1213, 794),
+    "khoratzh": (1254, 728),
+    "ulugrozt": (1143, 707),
+    "vhimyst": (1185, 675),
+    "trystzor": (1236, 653),
+    "vinniv-pti": (1244, 692),
+    "bahour-ilos": (1332, 881),
+    "sima": (1404, 892),
+    "hila": (1414, 891),
+    "idra": (1472, 872),
+    "ebyni": (1465, 933),
+    "allenia": (1395, 819),
+    "vormia": (1414, 786),
+    "porthelm": (1473, 834),
+    "stonesteps": (1498, 734),
+    "penhyla": (1535, 818),
+    "ebynshor": (1548, 891),
+    "lytzvia": (1450, 667),
+    "sthepenhall": (1005, 1074),
+    "pheo": (1099, 1084),
+    "edun": (1124, 1085),
+    "laad": (1145, 1077),
+    "hases": (1185, 1072),
+    "klate": (1220, 1065),
+    "myvus": (1253, 1063),
+    "vlenen": (1300, 1051),
+    "corvus": (1312, 1018),
+    "iden": (1350, 1034),
+    "maphlamar": (1327, 986),
+    "seawalt": (1403, 1040),
+    "danon": (1389, 1099),
+    "rhait": (1435, 973),
+    "ayin-lil": (981, 1111),
+    // Rough: Nihuloz is cut off at the bottom of the screenshot.
+    "nihuloz": (932, 1158),
+    "ayn-daiun": (1237, 1118),
+    "narhutz": (1329, 1140),
+}

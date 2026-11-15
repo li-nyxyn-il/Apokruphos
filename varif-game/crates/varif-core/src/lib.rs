@@ -18,6 +18,9 @@ pub mod world;
 pub use calendar::Date;
 pub use command::{Command, CommandError, Event};
 pub use data::{load_world, DataError};
-pub use ids::{PersonId, PlaceId};
+pub use ids::{PersonId, PlaceId, SiteId};
 pub use rng::Rng;
-pub use world::{JournalEntry, Person, Place, PlaceKind, Region, Road, Temple, World};
+pub use world::{
+    Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site, SiteKind, Temple,
+    World,
+};

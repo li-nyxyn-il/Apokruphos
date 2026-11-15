@@ -8,10 +8,13 @@ Install Rust from <https://rustup.rs>, then from this folder:
 
 ```
 cargo test     # run the tests
-cargo run      # walk the first leg at the command line
+cargo gui      # open the window
+cargo run      # walk the road at the command line
 ```
 
-At the prompt, try `look`, `go falls`, `camp`, `write The water is loud here.`, `journal` and `save save.ron`.
+In the window, click a place on the map or a road button to travel, a site to walk to it, and answer the question under the map when one appears. The first `cargo gui` takes a few minutes while the window library compiles.
+
+At the command line, type `help` for the list of commands.
 
 ## Layout
 
@@ -19,7 +22,9 @@ At the prompt, try `look`, `go falls`, `camp`, `write The water is loud here.`, 
 |---|---|
 | `crates/varif-core` | The library: types, rules, commands and events |
 | `crates/varif-cli` | The command-line front end (the `varif` program) |
+| `crates/varif-gui` | The window, built on egui (the `varif-gui` program) |
 | `data/first_leg.ron` | The first leg of the Pylgrymage, Yhlgrym to Atzhaim, as data |
+| `data/map_layout.ron` | Where each place is drawn on the window's map |
 
 Inside `varif-core/src`:
 

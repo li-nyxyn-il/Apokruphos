@@ -6,7 +6,7 @@
 use crate::calendar::Date;
 use crate::ids::PlaceId;
 use crate::rng::Rng;
-use crate::world::{Person, Place, Road, World};
+use crate::world::{Person, Place, Road, SiteKind, World};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -59,6 +59,8 @@ pub enum DataError {
     UnknownPlace { key: String, used_by: String },
     RoadToItself(String),
     DuplicateRoad { from: String, to: String },
+    DuplicateSite { place: String, site: String },
+    NoGate(String),
 }
 
 impl fmt::Display for DataError {
@@ -76,6 +78,12 @@ impl fmt::Display for DataError {
             DataError::RoadToItself(key) => write!(f, "a road joins \"{key}\" to itself"),
             DataError::DuplicateRoad { from, to } => {
                 write!(f, "there are two roads between \"{from}\" and \"{to}\"")
+            }
+            DataError::DuplicateSite { place, site } => {
+                write!(f, "two sites in \"{place}\" share the key \"{site}\"")
+            }
+            DataError::NoGate(place) => {
+                write!(f, "\"{place}\" has sites but no gate to come in by")
             }
         }
     }
@@ -103,6 +111,26 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         })
     };
 
+    for place in &data.places {
+        if place.sites.is_empty() {
+            continue;
+        }
+        if !place.sites.iter().any(|s| s.kind == SiteKind::Gate) {
+            return Err(DataError::NoGate(place.key.clone()));
+        }
+        for (i, site) in place.sites.iter().enumerate() {
+            if place.sites[..i].iter().any(|s| s.key == site.key) {
+                return Err(DataError::DuplicateSite {
+                    place: place.key.clone(),
+                    site: site.key.clone(),
+                });
+            }
+            for faced in &site.faces {
+                lookup(faced, &format!("the {} of {}", site.name, place.name))?;
+            }
+        }
+    }
+
     let start = &data.start;
     let date = Date::new(start.year, start.month, start.day).ok_or(DataError::BadStartDate {
         year: start.year,
@@ -110,6 +138,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         day: start.day,
     })?;
     let party_at = lookup(&start.party_at, "the start")?;
+    let party_site = data.places[party_at.index()].gate_for(None);
 
     let mut roads: Vec<Road> = Vec::new();
     for road in &data.roads {
@@ -159,7 +188,10 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         roads,
         people,
         party_at,
+        party_site,
         camped: false,
         journal: Vec::new(),
+        journey: None,
+        nights_without_camp: 0,
     })
 }
