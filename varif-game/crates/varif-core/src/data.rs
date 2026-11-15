@@ -4,6 +4,7 @@
 //! hand. Loading checks the file and turns every key into an ID.
 
 use crate::calendar::Date;
+use crate::character::{Character, SheetError};
 use crate::ids::PlaceId;
 use crate::rng::Rng;
 use crate::world::{Person, Place, Road, SiteKind, World};
@@ -43,10 +44,12 @@ struct RoadData {
 struct PersonData {
     key: String,
     name: String,
-    role: String,
+    title: String,
     at: String,
     #[serde(default)]
     in_party: bool,
+    #[serde(default)]
+    sheet: Option<Character>,
 }
 
 /// What is wrong with a data file.
@@ -61,6 +64,8 @@ pub enum DataError {
     DuplicateRoad { from: String, to: String },
     DuplicateSite { place: String, site: String },
     NoGate(String),
+    BadSheet { person: String, error: SheetError },
+    TwoPlayers,
 }
 
 impl fmt::Display for DataError {
@@ -73,7 +78,10 @@ impl fmt::Display for DataError {
             DataError::DuplicatePlace(key) => write!(f, "two places share the key \"{key}\""),
             DataError::DuplicatePerson(key) => write!(f, "two people share the key \"{key}\""),
             DataError::UnknownPlace { key, used_by } => {
-                write!(f, "{used_by} names a place \"{key}\" that is not in the file")
+                write!(
+                    f,
+                    "{used_by} names a place \"{key}\" that is not in the file"
+                )
             }
             DataError::RoadToItself(key) => write!(f, "a road joins \"{key}\" to itself"),
             DataError::DuplicateRoad { from, to } => {
@@ -85,6 +93,10 @@ impl fmt::Display for DataError {
             DataError::NoGate(place) => {
                 write!(f, "\"{place}\" has sites but no gate to come in by")
             }
+            DataError::BadSheet { person, error } => {
+                write!(f, "{person}'s sheet is not valid: {error}")
+            }
+            DataError::TwoPlayers => write!(f, "two people are the player"),
         }
     }
 }
@@ -105,10 +117,13 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         }
     }
     let lookup = |key: &str, used_by: &str| -> Result<PlaceId, DataError> {
-        place_ids.get(key).copied().ok_or_else(|| DataError::UnknownPlace {
-            key: key.to_string(),
-            used_by: used_by.to_string(),
-        })
+        place_ids
+            .get(key)
+            .copied()
+            .ok_or_else(|| DataError::UnknownPlace {
+                key: key.to_string(),
+                used_by: used_by.to_string(),
+            })
     };
 
     for place in &data.places {
@@ -162,6 +177,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
     }
 
     let mut people: Vec<Person> = Vec::new();
+    let mut seen_player = false;
     for person in data.people {
         if people.iter().any(|p| p.key == person.key) {
             return Err(DataError::DuplicatePerson(person.key));
@@ -172,12 +188,25 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         } else {
             lookup(&person.at, &person.name)?
         };
+        if let Some(sheet) = &person.sheet {
+            sheet.check().map_err(|error| DataError::BadSheet {
+                person: person.name.clone(),
+                error,
+            })?;
+            if sheet.role.is_player() {
+                if seen_player {
+                    return Err(DataError::TwoPlayers);
+                }
+                seen_player = true;
+            }
+        }
         people.push(Person {
             key: person.key,
             name: person.name,
-            role: person.role,
+            title: person.title,
             at,
             in_party: person.in_party,
+            sheet: person.sheet,
         });
     }
 

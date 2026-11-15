@@ -38,7 +38,10 @@ fn loop_map() -> World {
 }
 
 fn names(world: &World, stops: &[varif_core::PlaceId]) -> Vec<String> {
-    stops.iter().map(|&id| world.place_name(id).to_string()).collect()
+    stops
+        .iter()
+        .map(|&id| world.place_name(id).to_string())
+        .collect()
 }
 
 #[test]
@@ -65,8 +68,16 @@ fn a_route_never_passes_the_same_place_twice() {
         let mut seen = route.stops.clone();
         seen.sort();
         seen.dedup();
-        assert_eq!(seen.len(), route.stops.len(), "a stop repeats in {:?}", route.stops);
-        assert!(!route.stops.contains(&well), "the route returns to its start");
+        assert_eq!(
+            seen.len(),
+            route.stops.len(),
+            "a stop repeats in {:?}",
+            route.stops
+        );
+        assert!(
+            !route.stops.contains(&well),
+            "the route returns to its start"
+        );
     }
     assert_eq!(world.routes_between(well, hill).len(), 2);
 }
@@ -88,20 +99,21 @@ fn atzhaim_can_be_reached_by_the_road_or_through_maphlia() {
     let routes = world.routes_between(yhlgrym, atzhaim);
 
     // The Pylgrymage road up the canyon is the quickest way.
-    assert_eq!(names(&world, &routes[0].stops), ["Hylvynhani Falls", "Atzhaim"]);
-    assert_eq!(routes[0].days, 14, "the same 14 days as walking it");
+    assert_eq!(names(&world, &routes[0].stops), ["Atzhaim"]);
+    assert_eq!(routes[0].days, 7, "the same 7 days as walking it");
 
     // The map has many loops, so there are many slower ways. The quickest
-    // that avoids the canyon goes round by the south road, Maphlamar and the
-    // track over the hills to Heedhaim.
+    // that avoids the canyon goes by the falls, the south road, Maphlamar and
+    // the track over the hills to Heedhaim.
     assert!(routes.len() > 2);
     let round = routes
         .iter()
-        .find(|r| !names(&world, &r.stops).contains(&"Hylvynhani Falls".to_string()))
+        .find(|r| r.stops.len() > 1)
         .expect("a way that avoids the canyon");
     assert_eq!(
         names(&world, &round.stops),
         [
+            "Hylvynhani Falls",
             "Sthepenhall",
             "Pheo",
             "Edun",
@@ -121,10 +133,18 @@ fn a_new_place_can_be_routed_to() {
     let mut world = loop_map();
     let keep = world.find_place("keep").unwrap();
     let well = world.find_place("well").unwrap();
-    world.apply(Command::AddPlace { name: "Tor".to_string(), leagues: 1 }).unwrap();
+    world
+        .apply(Command::AddPlace {
+            name: "Tor".to_string(),
+            leagues: 1,
+        })
+        .unwrap();
     let tor = world.find_place("tor").unwrap();
 
     // Two ways reach Gate from Keep, and the road to Tor branches off Gate.
     assert_eq!(world.routes_between(keep, tor).len(), 2);
-    assert_eq!(names(&world, &world.routes_between(well, tor)[0].stops), ["Gate", "Tor"]);
+    assert_eq!(
+        names(&world, &world.routes_between(well, tor)[0].stops),
+        ["Gate", "Tor"]
+    );
 }

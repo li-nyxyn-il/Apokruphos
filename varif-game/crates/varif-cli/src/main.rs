@@ -15,6 +15,7 @@ const MAX_WAYS: usize = 5;
 const HELP: &str = "\
 Commands:
   look            describe where the party is and where the roads lead
+  sheet           show the player character
   go <place>      travel to a place, by key or by name; if no road runs
                   straight there you are offered the ways that lead there
                   and asked before each leg (y/n); on a walk of several
@@ -33,7 +34,9 @@ Commands:
   quit            leave";
 
 fn main() {
-    let path = env::args().nth(1).unwrap_or_else(|| DEFAULT_DATA.to_string());
+    let path = env::args()
+        .nth(1)
+        .unwrap_or_else(|| DEFAULT_DATA.to_string());
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) => {
@@ -111,7 +114,10 @@ fn main() {
                 match answer.parse::<usize>() {
                     Ok(n) if (1..=routes.len()).contains(&n) => {
                         let stops = routes[n - 1].stops.clone();
-                        println!("The party takes the way through {}.", through(&world, &stops));
+                        println!(
+                            "The party takes the way through {}.",
+                            through(&world, &stops)
+                        );
                         heading = set_out(&mut world, stops);
                     }
                     _ if answer == "n" || answer == "no" => stay(&world),
@@ -146,6 +152,7 @@ fn main() {
             "quit" | "exit" => break,
             "help" => println!("{HELP}"),
             "look" => look(&world),
+            "sheet" => sheet(&world),
             "journal" => journal(&world),
             "map" => map(&world),
             "walk" => walk(&mut world, rest),
@@ -154,7 +161,12 @@ fn main() {
                 run(&mut world, Command::MakeCamp);
             }
             "write" => {
-                run(&mut world, Command::WriteJournal { text: rest.to_string() });
+                run(
+                    &mut world,
+                    Command::WriteJournal {
+                        text: rest.to_string(),
+                    },
+                );
             }
             "go" => asking = go(&mut world, rest),
             "save" if rest.is_empty() => println!("Save to which file?"),
@@ -176,7 +188,10 @@ enum Asking {
     /// Several ways lead to the place; the player picks one by number.
     WhichWay(Vec<Itinerary>),
     /// Walk to the first of these stops? The rest follow, one question each.
-    NextStop { stops: Vec<PlaceId>, first_leg: bool },
+    NextStop {
+        stops: Vec<PlaceId>,
+        first_leg: bool,
+    },
 }
 
 /// Sends one command to the world and prints what happened. True if the
@@ -232,9 +247,13 @@ fn go(world: &mut World, rest: &str) -> Asking {
         }
         n => {
             if hidden == 0 {
-                println!("No road runs straight from {from_name} to {to_name}. There are {n} ways:");
+                println!(
+                    "No road runs straight from {from_name} to {to_name}. There are {n} ways:"
+                );
             } else {
-                println!("No road runs straight from {from_name} to {to_name}. The {n} quickest ways:");
+                println!(
+                    "No road runs straight from {from_name} to {to_name}. The {n} quickest ways:"
+                );
             }
             for (i, route) in routes.iter().enumerate() {
                 println!(
@@ -272,7 +291,11 @@ fn stay(world: &World) {
 /// The places a route passes on the way, without its destination.
 fn through(world: &World, stops: &[PlaceId]) -> String {
     let passed = &stops[..stops.len().saturating_sub(1)];
-    passed.iter().map(|&id| world.place_name(id)).collect::<Vec<_>>().join(", ")
+    passed
+        .iter()
+        .map(|&id| world.place_name(id))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn length(route: &Itinerary) -> String {
@@ -296,7 +319,10 @@ fn describe(world: &World, event: &Event) -> String {
             world.place_name(*to)
         ),
         Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
-        Event::PressedOn { nights_without_camp, .. } => match nights_without_camp {
+        Event::PressedOn {
+            nights_without_camp,
+            ..
+        } => match nights_without_camp {
             1 => "The party presses on through the night.".to_string(),
             n => format!("The party presses on through the night, {n} nights without camp."),
         },
@@ -317,7 +343,12 @@ fn describe(world: &World, event: &Event) -> String {
         }
         Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
-        Event::PlaceAdded { place, from, leagues, .. } => {
+        Event::PlaceAdded {
+            place,
+            from,
+            leagues,
+            ..
+        } => {
             let key = world.place(*place).map_or("?", |p| p.key.as_str());
             format!(
                 "{} [{}] is added to the map, {} leagues from {}.",
@@ -326,6 +357,47 @@ fn describe(world: &World, event: &Event) -> String {
                 leagues,
                 world.place_name(*from)
             )
+        }
+    }
+}
+
+fn sheet(world: &World) {
+    let Some(person) = world.player() else {
+        println!("There is no player.");
+        return;
+    };
+    let Some(sheet) = &person.sheet else {
+        println!("{} has no sheet.", person.name);
+        return;
+    };
+
+    println!("{}", person.name);
+    println!("  Role: {}", sheet.role.name());
+    println!("  Faction: {}", sheet.faction_label());
+    println!(
+        "  {} years, {} blood, {}",
+        sheet.age,
+        sheet.blood.name(),
+        sheet.heritage.name()
+    );
+    println!("  Akstada: {}", sheet.akstada.name());
+    println!("  Tongues: {}", sheet.tongue_list());
+    println!("  Background: {}", sheet.background);
+    println!("  Level {}", sheet.level);
+    println!(
+        "  Health {}    Fatigue {}    Resilience {}",
+        sheet.health, sheet.fatigue, sheet.resilience
+    );
+    if sheet.inventory.is_empty() {
+        println!("  Carrying nothing.");
+    } else {
+        println!("  Carrying:");
+        for item in &sheet.inventory {
+            if item.count == 1 {
+                println!("    {}", item.name);
+            } else {
+                println!("    {} ({})", item.name, item.count);
+            }
         }
     }
 }
@@ -350,11 +422,14 @@ fn look(world: &World) {
         }
     }
     if let Some(site) = world.party_site {
-        println!("  The party stands at the {}.", site_name(Some(place), site));
+        println!(
+            "  The party stands at the {}.",
+            site_name(Some(place), site)
+        );
         println!("  Type walk to see where it can go in {}.", place.name);
     }
     for person in world.residents(here) {
-        println!("  {} ({}) is here.", person.name, person.role);
+        println!("  {} ({}) is here.", person.name, person.title);
     }
     if world.camped {
         println!("  The party is camped.");
@@ -363,7 +438,12 @@ fn look(world: &World) {
     println!("Roads:");
     for (to, road) in world.neighbours(here) {
         let key = world.place(to).map_or("?", |p| p.key.as_str());
-        println!("  {} [{}], {} leagues", world.place_name(to), key, road.leagues);
+        println!(
+            "  {} [{}], {} leagues",
+            world.place_name(to),
+            key,
+            road.leagues
+        );
     }
 }
 
@@ -390,7 +470,11 @@ fn map(world: &World) {
         let way = if route.roads == 1 {
             "road from here".to_string()
         } else {
-            format!("{} roads, first to {}", route.roads, world.place_name(route.first_step))
+            format!(
+                "{} roads, first to {}",
+                route.roads,
+                world.place_name(route.first_step)
+            )
         };
         let days = route.days;
         println!(
@@ -432,7 +516,13 @@ fn add_place(world: &mut World, rest: &str) {
         println!("{USAGE}");
         return;
     }
-    run(world, Command::AddPlace { name: name.to_string(), leagues });
+    run(
+        world,
+        Command::AddPlace {
+            name: name.to_string(),
+            leagues,
+        },
+    );
 }
 
 /// Handles "walk" and "walk <site>".
@@ -475,5 +565,7 @@ fn walk(world: &mut World, rest: &str) {
 }
 
 fn site_name(place: Option<&Place>, id: varif_core::SiteId) -> &str {
-    place.and_then(|p| p.site(id)).map_or("an unknown spot", |s| s.name.as_str())
+    place
+        .and_then(|p| p.site(id))
+        .map_or("an unknown spot", |s| s.name.as_str())
 }

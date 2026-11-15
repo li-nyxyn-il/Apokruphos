@@ -9,6 +9,7 @@
 //! 3. shows the player the [`Event`]s that come back.
 
 pub mod calendar;
+pub mod character;
 pub mod command;
 pub mod data;
 pub mod ids;
@@ -16,11 +17,15 @@ pub mod rng;
 pub mod world;
 
 pub use calendar::Date;
+pub use character::{
+    Akstada, Blood, Character, Heritage, Item, Role, SheetError, Tongue, BASE_FATIGUE, BASE_HEALTH,
+    BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
+};
 pub use command::{Command, CommandError, Event};
 pub use data::{load_world, DataError};
 pub use ids::{PersonId, PlaceId, SiteId};
 pub use rng::Rng;
 pub use world::{
-    Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site, SiteKind, Temple,
-    World,
+    Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site,
+    SiteKind, Temple, World,
 };

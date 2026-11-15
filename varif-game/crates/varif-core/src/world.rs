@@ -1,6 +1,7 @@
 //! The state of the world: tables of places, roads and people, plus the party.
 
 use crate::calendar::Date;
+use crate::character::Character;
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
@@ -104,7 +105,8 @@ impl Place {
                 .enumerate()
                 .filter(|(_, s)| s.kind == SiteKind::Gate)
         };
-        let facing = from_key.and_then(|key| gates().find(|(_, s)| s.faces.iter().any(|f| f == key)));
+        let facing =
+            from_key.and_then(|key| gates().find(|(_, s)| s.faces.iter().any(|f| f == key)));
         facing
             .or_else(|| gates().next())
             .map(|(i, _)| SiteId(i as u32))
@@ -138,7 +140,9 @@ impl Road {
 
     /// How many days it takes to walk the road.
     pub fn days(&self) -> u32 {
-        self.leagues.div_ceil(crate::command::LEAGUES_PER_DAY).max(1)
+        self.leagues
+            .div_ceil(crate::command::LEAGUES_PER_DAY)
+            .max(1)
     }
 
     /// The far end of the road as seen from `from`, if the road touches it.
@@ -183,11 +187,30 @@ pub struct Itinerary {
 pub struct Person {
     pub key: String,
     pub name: String,
-    pub role: String,
+    /// How they are known in a place: "Pylgrym", "Innkeeper". The player,
+    /// NPC and follower distinction lives on the sheet's [`crate::character::Role`].
+    pub title: String,
     pub at: PlaceId,
-    /// True for the player and the camp followers, who move with the party.
+    /// True for the player and for followers travelling with the party.
     #[serde(default)]
     pub in_party: bool,
+    /// The shared character sheet. A person named only as cast leaves it empty.
+    #[serde(default)]
+    pub sheet: Option<Character>,
+}
+
+impl Person {
+    pub fn is_player(&self) -> bool {
+        self.sheet
+            .as_ref()
+            .is_some_and(|sheet| sheet.role.is_player())
+    }
+
+    pub fn is_follower(&self) -> bool {
+        self.sheet
+            .as_ref()
+            .is_some_and(|sheet| sheet.role.is_follower())
+    }
 }
 
 /// A walk of more than one day that is under way. Between days the party
@@ -233,7 +256,7 @@ pub struct World {
     #[serde(default)]
     pub journey: Option<Journey>,
     /// Nights in a row the party has gone without making camp. Nothing reads
-    /// this yet: it is the hook for a fatigue system.
+    /// this yet: it is the hook for spending a character's fatigue.
     #[serde(default)]
     pub nights_without_camp: u32,
 }
@@ -249,7 +272,8 @@ impl World {
 
     /// The name of a place, or a placeholder if the ID is not in the table.
     pub fn place_name(&self, id: PlaceId) -> &str {
-        self.place(id).map_or("an unknown place", |p| p.name.as_str())
+        self.place(id)
+            .map_or("an unknown place", |p| p.name.as_str())
     }
 
     /// Finds a place by its key or its name, ignoring case.
@@ -299,7 +323,11 @@ impl World {
                     days += road.days();
                     at = next;
                 }
-                Itinerary { stops, leagues, days }
+                Itinerary {
+                    stops,
+                    leagues,
+                    days,
+                }
             })
             .collect();
         routes.sort_by_key(|r| (r.days, r.leagues, r.stops.len()));
@@ -366,18 +394,26 @@ impl World {
                     roads: here.roads + 1,
                     first_step: if here.roads == 0 { to } else { here.first_step },
                 };
-                let better = best[to.index()]
-                    .map_or(true, |old| (candidate.leagues, candidate.roads) < (old.leagues, old.roads));
+                let better = best[to.index()].map_or(true, |old| {
+                    (candidate.leagues, candidate.roads) < (old.leagues, old.roads)
+                });
                 if !settled[to.index()] && better {
                     best[to.index()] = Some(candidate);
                 }
             }
         }
 
-        let mut routes: Vec<Route> = best.into_iter().flatten().filter(|r| r.to != from).collect();
+        let mut routes: Vec<Route> = best
+            .into_iter()
+            .flatten()
+            .filter(|r| r.to != from)
+            .collect();
         routes.sort_by(|x, y| {
-            (x.leagues, x.roads, self.place_name(x.to))
-                .cmp(&(y.leagues, y.roads, self.place_name(y.to)))
+            (x.leagues, x.roads, self.place_name(x.to)).cmp(&(
+                y.leagues,
+                y.roads,
+                self.place_name(y.to),
+            ))
         });
         routes
     }
@@ -387,9 +423,21 @@ impl World {
         self.people.iter().filter(|p| p.in_party)
     }
 
+    /// The player, the person whose sheet says they are the player.
+    pub fn player(&self) -> Option<&Person> {
+        self.people.iter().find(|person| person.is_player())
+    }
+
+    /// NPCs whose sheet marks them as followers.
+    pub fn followers(&self) -> impl Iterator<Item = &Person> {
+        self.people.iter().filter(|person| person.is_follower())
+    }
+
     /// The people at a place who are not in the party.
     pub fn residents(&self, at: PlaceId) -> impl Iterator<Item = &Person> {
-        self.people.iter().filter(move |p| !p.in_party && p.at == at)
+        self.people
+            .iter()
+            .filter(move |p| !p.in_party && p.at == at)
     }
 
     /// Writes the whole world as text, for saving.

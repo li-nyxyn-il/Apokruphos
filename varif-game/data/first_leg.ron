@@ -17,7 +17,7 @@
         day: 1,
         // Change the seed to get a different run of road encounters.
         seed: 192,
-        party_at: "idra",
+        party_at: "yhlgrym",
     ),
 
     places: [
@@ -519,6 +519,24 @@
     people: [
         // A stand-in for the player. Followers, prelates and governors go
         // here once the cast of the era is decided.
-        (key: "pylgrym", name: "The Pylgrym", role: "Pylgrym", at: "yhlgrym", in_party: true),
+        // ASSUMPTION: the whole sheet, until character creation chooses it.
+        // Health, fatigue, resilience and level are left out, so they stay
+        // at their base, and the inventory starts empty.
+        (
+            key: "pylgrym",
+            name: "The Pylgrym",
+            title: "Pylgrym",
+            at: "yhlgrym",
+            in_party: true,
+            sheet: (
+                role: Player,
+                age: 20,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Pylgrym,
+                tongues: [Shentz, Maphlian],
+                background: "Pylgrym",
+            ),
+        ),
     ],
 )

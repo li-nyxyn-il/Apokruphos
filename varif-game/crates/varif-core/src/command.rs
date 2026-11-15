@@ -36,24 +36,71 @@ pub enum Command {
 /// Something that happened in the world as the result of a command.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
-    Departed { from: PlaceId, to: PlaceId, on: Date },
-    DayPassed { date: Date },
-    RoadEncounter { from: PlaceId, to: PlaceId, on: Date },
+    Departed {
+        from: PlaceId,
+        to: PlaceId,
+        on: Date,
+    },
+    DayPassed {
+        date: Date,
+    },
+    RoadEncounter {
+        from: PlaceId,
+        to: PlaceId,
+        on: Date,
+    },
     /// A day on the road is over and the walk is not. The world now waits for
     /// a [`Command::EndDay`].
-    NightFalls { from: PlaceId, to: PlaceId, days_left: u32, on: Date },
-    CampedOnRoad { from: PlaceId, to: PlaceId, on: Date },
+    NightFalls {
+        from: PlaceId,
+        to: PlaceId,
+        days_left: u32,
+        on: Date,
+    },
+    CampedOnRoad {
+        from: PlaceId,
+        to: PlaceId,
+        on: Date,
+    },
     /// The party went through the night without making camp.
-    PressedOn { from: PlaceId, to: PlaceId, nights_without_camp: u32, on: Date },
-    Arrived { at: PlaceId, on: Date },
+    PressedOn {
+        from: PlaceId,
+        to: PlaceId,
+        nights_without_camp: u32,
+        on: Date,
+    },
+    Arrived {
+        at: PlaceId,
+        on: Date,
+    },
     /// The party came into a place with sites by one of its gates.
-    EnteredBy { at: PlaceId, gate: SiteId, on: Date },
+    EnteredBy {
+        at: PlaceId,
+        gate: SiteId,
+        on: Date,
+    },
     /// The party walked from one site to another inside a place. `from` is
     /// `None` if it was not standing at any site.
-    Walked { at: PlaceId, from: Option<SiteId>, to: SiteId, on: Date },
-    Camped { at: PlaceId, on: Date },
-    JournalWritten { at: PlaceId, on: Date },
-    PlaceAdded { place: PlaceId, from: PlaceId, leagues: u32, on: Date },
+    Walked {
+        at: PlaceId,
+        from: Option<SiteId>,
+        to: SiteId,
+        on: Date,
+    },
+    Camped {
+        at: PlaceId,
+        on: Date,
+    },
+    JournalWritten {
+        at: PlaceId,
+        on: Date,
+    },
+    PlaceAdded {
+        place: PlaceId,
+        from: PlaceId,
+        leagues: u32,
+        on: Date,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -61,7 +108,10 @@ pub enum Event {
 pub enum CommandError {
     UnknownPlace(PlaceId),
     AlreadyThere,
-    NoRoad { from: PlaceId, to: PlaceId },
+    NoRoad {
+        from: PlaceId,
+        to: PlaceId,
+    },
     EmptyJournalEntry,
     EmptyPlaceName,
     PlaceExists(String),
@@ -87,12 +137,17 @@ impl fmt::Display for CommandError {
                 write!(f, "there is already a place called \"{name}\"")
             }
             CommandError::OnTheRoad => {
-                write!(f, "the party is on the road and must first decide whether to camp")
+                write!(
+                    f,
+                    "the party is on the road and must first decide whether to camp"
+                )
             }
             CommandError::NotOnTheRoad => write!(f, "the party is not on the road"),
             CommandError::NowhereToWalk => write!(f, "there is nowhere to walk to here"),
             CommandError::UnknownSite(id) => write!(f, "there is no site with id {} here", id.0),
-            CommandError::NoDistance => write!(f, "the road to a new place must be at least 1 league"),
+            CommandError::NoDistance => {
+                write!(f, "the road to a new place must be at least 1 league")
+            }
         }
     }
 }
@@ -279,7 +334,9 @@ impl World {
             return Err(CommandError::NoDistance);
         }
         if let Some(existing) = self.find_place(&name).or_else(|| self.find_place(&key)) {
-            return Err(CommandError::PlaceExists(self.place_name(existing).to_string()));
+            return Err(CommandError::PlaceExists(
+                self.place_name(existing).to_string(),
+            ));
         }
 
         let from = self.party_at;

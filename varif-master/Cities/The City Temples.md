@@ -6,4 +6,4 @@
 
 [[Atzch Lake Hall]] and the [[Temple of Phionyx]] are located on the southern tip of [[Lake Shentzlia]], the repository of the Shentlian watershed and source of the Yhlgori river. The [[Nedic Schools]] of Atzch Lake Hall are fertility and genealogy, and climatology. 
 
-[[Variff/Regions/Cascadia]] and the [[Temple of Drake]] are located in the northwestern Shentzlian valley along the**
+[[varif-master/Regions/Cascadia]] and the [[Temple of Drake]] are located in the northwestern Shentzlian valley along the**

@@ -13,7 +13,9 @@ use eframe::egui;
 use layout::MapLayout;
 use std::path::Path;
 use std::{env, fs, process};
-use varif_core::{load_world, Command, Event, Itinerary, Place, PlaceId, PlaceKind, Route, SiteId, World};
+use varif_core::{
+    load_world, Command, Event, Itinerary, Place, PlaceId, PlaceKind, Route, SiteId, World,
+};
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
 /// Looked for beside the data file.
@@ -23,7 +25,9 @@ const LAYOUT_FILE: &str = "map_layout.ron";
 const MAX_WAYS: usize = 5;
 
 fn main() -> eframe::Result {
-    let path = env::args().nth(1).unwrap_or_else(|| DEFAULT_DATA.to_string());
+    let path = env::args()
+        .nth(1)
+        .unwrap_or_else(|| DEFAULT_DATA.to_string());
     let world = match read_data(&path) {
         Ok(world) => world,
         Err(error) => {
@@ -152,8 +156,10 @@ impl App {
                 if let Some((_, mut routes, _)) = self.ways.take() {
                     if index < routes.len() {
                         let stops = routes.swap_remove(index).stops;
-                        self.log
-                            .push(format!("The party takes the way through {}.", through(&self.world, &stops)));
+                        self.log.push(format!(
+                            "The party takes the way through {}.",
+                            through(&self.world, &stops)
+                        ));
                         self.set_out(stops);
                     }
                 }
@@ -165,8 +171,10 @@ impl App {
             }
             Action::Stay => {
                 self.heading.clear();
-                self.log
-                    .push(format!("The party stays at {}.", self.world.place_name(self.world.party_at)));
+                self.log.push(format!(
+                    "The party stays at {}.",
+                    self.world.place_name(self.world.party_at)
+                ));
             }
             Action::AddPlace => {
                 let command = Command::AddPlace {
@@ -265,30 +273,42 @@ impl eframe::App for App {
             });
         });
 
-        egui::Panel::left("place_panel").default_size(280.0).show(ui, |ui| {
-            egui::ScrollArea::vertical().id_salt("place_scroll").show(ui, |ui| {
-                ui.add_enabled_ui(!on_road, |ui| {
-                    place_panel(ui, &self.world, &mut action);
-                    ui.separator();
-                    ui.strong("Add a place");
-                    ui.add(egui::TextEdit::singleline(&mut self.new_place).hint_text("Name"));
-                    ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut self.new_leagues).range(1..=500).suffix(" leagues"));
-                        let named = !self.new_place.trim().is_empty();
-                        if ui.add_enabled(named, egui::Button::new("Add")).clicked() {
-                            action = Some(Action::AddPlace);
-                        }
+        egui::Panel::left("place_panel")
+            .default_size(280.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("place_scroll")
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(!on_road, |ui| {
+                            place_panel(ui, &self.world, &mut action);
+                            ui.separator();
+                            ui.strong("Add a place");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.new_place).hint_text("Name"),
+                            );
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut self.new_leagues)
+                                        .range(1..=500)
+                                        .suffix(" leagues"),
+                                );
+                                let named = !self.new_place.trim().is_empty();
+                                if ui.add_enabled(named, egui::Button::new("Add")).clicked() {
+                                    action = Some(Action::AddPlace);
+                                }
+                            });
+                            ui.weak("Joined by a new road to where the party stands.");
+                        });
                     });
-                    ui.weak("Joined by a new road to where the party stands.");
+            });
+
+        egui::Panel::right("party_panel")
+            .default_size(300.0)
+            .show(ui, |ui| {
+                ui.add_enabled_ui(!on_road, |ui| {
+                    party_panel(ui, &self.world, &mut self.draft, &mut action);
                 });
             });
-        });
-
-        egui::Panel::right("party_panel").default_size(300.0).show(ui, |ui| {
-            ui.add_enabled_ui(!on_road, |ui| {
-                party_panel(ui, &self.world, &mut self.draft, &mut action);
-            });
-        });
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("Map");
@@ -351,7 +371,11 @@ fn question(
             ));
             for (index, route) in routes.iter().enumerate() {
                 let passing = through(world, &route.stops);
-                let label = format!("Through {passing}: {} leagues, {}", route.leagues, days(route.days));
+                let label = format!(
+                    "Through {passing}: {} leagues, {}",
+                    route.leagues,
+                    days(route.days)
+                );
                 if ui.button(label).clicked() {
                     *action = Some(Action::TakeWay(index));
                 }
@@ -414,7 +438,7 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
         ui.separator();
         ui.strong("Here");
         for person in residents {
-            ui.label(format!("{} ({})", person.name, person.role));
+            ui.label(format!("{} ({})", person.name, person.title));
         }
     }
 
@@ -439,13 +463,22 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
         ui.weak("No road leads anywhere from here.");
     }
     for (to, road) in neighbours {
-        let label = format!("{}: {} leagues, {}", world.place_name(to), road.leagues, days(road.days()));
+        let label = format!(
+            "{}: {} leagues, {}",
+            world.place_name(to),
+            road.leagues,
+            days(road.days())
+        );
         if ui.button(label).clicked() {
             *action = Some(Action::Send(Command::Travel { to }));
         }
     }
 
-    let further: Vec<Route> = world.reachable(here).into_iter().filter(|r| r.roads > 1).collect();
+    let further: Vec<Route> = world
+        .reachable(here)
+        .into_iter()
+        .filter(|r| r.roads > 1)
+        .collect();
     if !further.is_empty() {
         ui.separator();
         ui.strong("Further afield");
@@ -470,7 +503,41 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
 fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mut Option<Action>) {
     ui.heading("Party");
     for person in world.party() {
-        ui.label(format!("{} ({})", person.name, person.role));
+        ui.label(format!("{} ({})", person.name, person.title));
+        let Some(sheet) = &person.sheet else { continue };
+        let follower = if sheet.role.is_follower() {
+            ", follower"
+        } else {
+            ""
+        };
+        ui.weak(format!("Role: {}{follower}", sheet.role.name()));
+        ui.weak(format!("Faction: {}", sheet.faction_label()));
+        ui.weak(format!(
+            "{} years, {} blood, {}",
+            sheet.age,
+            sheet.blood.name(),
+            sheet.heritage.name()
+        ));
+        ui.weak(format!("Akstada: {}", sheet.akstada.name()));
+        ui.weak(format!("Tongues: {}", sheet.tongue_list()));
+        ui.weak(format!("Background: {}", sheet.background));
+        ui.label(format!("Level {}", sheet.level));
+        ui.label(format!(
+            "Health {}    Fatigue {}    Resilience {}",
+            sheet.health, sheet.fatigue, sheet.resilience
+        ));
+        if sheet.inventory.is_empty() {
+            ui.weak("Carrying nothing.");
+        } else {
+            ui.weak("Carrying:");
+            for item in &sheet.inventory {
+                if item.count == 1 {
+                    ui.label(&item.name);
+                } else {
+                    ui.label(format!("{} ({})", item.name, item.count));
+                }
+            }
+        }
     }
     ui.horizontal(|ui| {
         if ui.button("Make camp").clicked() {
@@ -481,7 +548,10 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         }
     });
     if world.nights_without_camp > 0 {
-        ui.label(format!("{} without camp.", nights(world.nights_without_camp)));
+        ui.label(format!(
+            "{} without camp.",
+            nights(world.nights_without_camp)
+        ));
     }
 
     ui.separator();
@@ -510,13 +580,24 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
             .desired_width(f32::INFINITY),
     );
     let has_words = !draft.trim().is_empty();
-    if ui.add_enabled(has_words, egui::Button::new("Write entry")).clicked() {
-        *action = Some(Action::Send(Command::WriteJournal { text: draft.clone() }));
+    if ui
+        .add_enabled(has_words, egui::Button::new("Write entry"))
+        .clicked()
+    {
+        *action = Some(Action::Send(Command::WriteJournal {
+            text: draft.clone(),
+        }));
     }
 }
 
 /// A map of every place and road. Clicking a place goes there.
-fn map(ui: &mut egui::Ui, world: &World, layout: &MapLayout, height: f32, action: &mut Option<Action>) {
+fn map(
+    ui: &mut egui::Ui,
+    world: &World,
+    layout: &MapLayout,
+    height: f32,
+    action: &mut Option<Action>,
+) {
     let size = egui::vec2(ui.available_width(), height);
     let (response, painter) = ui.allocate_painter(size, egui::Sense::hover());
     let area = response.rect.shrink2(egui::vec2(80.0, 34.0));
@@ -553,7 +634,9 @@ fn map(ui: &mut egui::Ui, world: &World, layout: &MapLayout, height: f32, action
         .places
         .iter()
         .zip(&on_screen)
-        .map(|(place, &centre)| egui::Rect::from_center_size(centre, egui::Vec2::splat(2.0 * radius_of(place) + 4.0)))
+        .map(|(place, &centre)| {
+            egui::Rect::from_center_size(centre, egui::Vec2::splat(2.0 * radius_of(place) + 4.0))
+        })
         .collect();
     let mut names: Vec<egui::Rect> = Vec::new();
 
@@ -567,7 +650,11 @@ fn map(ui: &mut egui::Ui, world: &World, layout: &MapLayout, height: f32, action
         if let Some(route) = route {
             let hit_box = egui::Rect::from_center_size(centre, egui::vec2(26.0, 26.0));
             let node = ui
-                .interact(hit_box, ui.scope_id().with(("map_node", index)), egui::Sense::click())
+                .interact(
+                    hit_box,
+                    ui.scope_id().with(("map_node", index)),
+                    egui::Sense::click(),
+                )
                 .on_hover_text(format!(
                     "Go to {}: {} leagues, {}",
                     place.name,
@@ -593,7 +680,11 @@ fn map(ui: &mut egui::Ui, world: &World, layout: &MapLayout, height: f32, action
         // Try the name below, above, right and left of the dot, and keep the
         // spot where it covers the least of the dots and the names already
         // drawn. Places are crowded in parts of the map.
-        let label_colour = if route.is_some() || is_here { text_colour } else { weak_colour };
+        let label_colour = if route.is_some() || is_here {
+            text_colour
+        } else {
+            weak_colour
+        };
         let galley = painter.layout_no_wrap(place.name.clone(), font.clone(), label_colour);
         let gap = radius + 5.0;
         let spots = [
@@ -620,7 +711,10 @@ fn map(ui: &mut egui::Ui, world: &World, layout: &MapLayout, height: f32, action
 
     // On the road, mark how far along it the party has come.
     if let Some(journey) = world.journey {
-        let (from, to) = (on_screen[journey.from.index()], on_screen[journey.to.index()]);
+        let (from, to) = (
+            on_screen[journey.from.index()],
+            on_screen[journey.to.index()],
+        );
         let part = journey.days_walked as f32 / journey.days.max(1) as f32;
         let party = from + (to - from) * part;
         painter.circle_filled(party, 5.0, here_colour);
@@ -663,7 +757,10 @@ fn describe(world: &World, event: &Event) -> String {
             world.place_name(*to)
         ),
         Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
-        Event::PressedOn { nights_without_camp, .. } => match nights_without_camp {
+        Event::PressedOn {
+            nights_without_camp,
+            ..
+        } => match nights_without_camp {
             1 => "The party presses on through the night.".to_string(),
             n => format!("The party presses on through the night, {n} nights without camp."),
         },
@@ -684,7 +781,12 @@ fn describe(world: &World, event: &Event) -> String {
         }
         Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
-        Event::PlaceAdded { place, from, leagues, .. } => format!(
+        Event::PlaceAdded {
+            place,
+            from,
+            leagues,
+            ..
+        } => format!(
             "{} is added to the map, {} leagues from {}.",
             world.place_name(*place),
             leagues,
@@ -694,13 +796,19 @@ fn describe(world: &World, event: &Event) -> String {
 }
 
 fn site_name(place: Option<&Place>, id: SiteId) -> &str {
-    place.and_then(|p| p.site(id)).map_or("an unknown spot", |s| s.name.as_str())
+    place
+        .and_then(|p| p.site(id))
+        .map_or("an unknown spot", |s| s.name.as_str())
 }
 
 /// The places a way passes, without its destination.
 fn through(world: &World, stops: &[PlaceId]) -> String {
     let passed = &stops[..stops.len().saturating_sub(1)];
-    passed.iter().map(|&id| world.place_name(id)).collect::<Vec<_>>().join(", ")
+    passed
+        .iter()
+        .map(|&id| world.place_name(id))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn days(count: u32) -> String {

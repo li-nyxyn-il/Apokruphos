@@ -34,6 +34,7 @@ Inside `varif-core/src`:
 | `command.rs` | `Command`, `Event` and the rules in `World::apply` |
 | `data.rs` | Loading a world from a data file |
 | `calendar.rs` | `Date`, with eight months and five weekdays |
+| `character.rs` | The shared sheet: role, faction, blood, heritage, akstada, tongues, vitals, inventory |
 | `rng.rs` | The seeded random number generator |
 | `ids.rs` | `PlaceId` and `PersonId` |
 
@@ -53,6 +54,7 @@ These are marked `ASSUMPTION` in the code and data:
 - **Distances and encounter chances:** every road in `data/first_leg.ron`.
 - **Start date:** 1 Jhuze 192 zdy.
 - **The cast:** one stand-in person, "The Pylgrym".
+- **The player's sheet:** the player, no faction, age 20, red blood, Shentzi, born under the Pylgrym, speaking Shentz and Maphlian. Health, fatigue and resilience are 100, level is 1, and the inventory is empty. All of that is in `data/first_leg.ron`.
 
 ## Adding to it
 

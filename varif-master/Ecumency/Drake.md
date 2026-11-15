@@ -11,7 +11,7 @@ The other Kairal God of old Shentz: Beyond of the mountains, age and death, and 
 ## Domain
 
 - **Pynumbra:** Shentz ([[Shentzlia]]), a Kairal God with [[The Phionyx]]. The *atzh* of the Shentz are "these atzh of the Drake".
-- **City temple:** Drazihaim, also called Drazihaim Hylhelm in places, which Hesseh passed through on his way to Maphlamar. Its Krypt of Drake is home to the Hylvannus Kraiark of Law. Your 2024 [[Temple of Drake]] note placed it at [[Variff/Cities/Great Atzch Road/Cascadia|Cascadia]] in the northwestern Shentzlian valley.
+- **City temple:** Drazihaim, also called Drazihaim Hylhelm in places, which Hesseh passed through on his way to Maphlamar. Its Krypt of Drake is home to the Hylvannus Kraiark of Law. Your 2024 [[Temple of Drake]] note placed it at [[varif-master/Cities/Great Atzch Road/Cascadia|Cascadia]] in the northwestern Shentzlian valley.
 - **Other krypts:** in Atzhaim, his Krypt stands "just beyond the Inner Wall".
 
 ## Dictate

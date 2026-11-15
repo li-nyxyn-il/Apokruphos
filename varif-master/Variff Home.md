@@ -22,7 +22,7 @@ The front door to the Variff notes. Every note in the vault can be reached from 
 - Dead gods: [[Rythundi]] (the Rythundi Maph: [[Khunxar]] · [[Denma]] · [[Ithkria]] · [[Xios]] · [[Yaelde]] · [[Sysil]] · [[Jhulio]] · [[Earaen]]; the creator [[Jhunus]])
 - Temples: [[Temple of Drake]] · [[Temple of Grymsiere]] · [[Temple of Phionyx]]
 - Nedia: [[nedia]] · [[Nedic Schools]]
-- [[Ecumency/Great Atzch Road|Great Atzch Road]] (Ecumency note)
+- [[Great Atzch Road|Great Atzch Road]] (Ecumency note)
 
 ## The Phionyx
 
@@ -31,20 +31,20 @@ The front door to the Variff notes. Every note in the vault can be reached from 
 ## Peoples and polities
 
 - [[Ethnicities]]: the list of Varifian peoples
-- [[Aphian]] · [[Maphian]] · [[Ptormic]] · [[Shentzi]] · [[Theylix]] · [[Vhinhili]] · [[Ethnicities/Yhlgori|Yhlgori (people)]] · [[Ylhmahi]] · [[Zechi]]
-- [[Yhlgori Empire]] · [[Variff/Yhlgori|Yhlgori]]
+- [[Aphian]] · [[Maphian]] · [[Ptormic]] · [[Shentzi]] · [[Theylix]] · [[Vhinhili]] · [[varif-master/Ethnicities/Yhlgori|Yhlgori (people)]] · [[Ylhmahi]] · [[Zechi]]
+- [[Yhlgori Empire]] · [[varif-master/Yhlgori|Yhlgori]]
 
 ## Regions
 
 - [[Variff]]: the continents
-- [[Diyk]] · [[Atzchia]] · [[Aphlora]] · [[Regions/Cascadia|Cascadia (region)]] · [[The Cascades]] · [[The Donwood]] · [[Kourzechi]] · [[Maphlia]] · [[Phorva]] · [[Reimhurst]] · [[Shentz]] · [[Shentzlia]] · [[Lake Shentzlia]] · [[Verdan]] · [[Veryll]] · [[Vhinhelm]] · [[Yhl Water Gap]]
+- [[Diyk]] · [[Atzchia]] · [[Aphlora]] · [[varif-master/Regions/Cascadia|Cascadia (region)]] · [[The Cascades]] · [[The Donwood]] · [[Kourzechi]] · [[Maphlia]] · [[Phorva]] · [[Reimhurst]] · [[Shentz]] · [[Shentzlia]] · [[Lake Shentzlia]] · [[Verdan]] · [[Veryll]] · [[Vhinhelm]] · [[Yhl Water Gap]]
 - Towns and cities by region: [[Towns and Cities of Aphlora]] · [[Towns and Cities of Maphlia]] · [[Towns and Cities of Shentzlia]] · [[Towns and Cities of Vhinhelm]] · [[Towns and Cities of Yhlmahni]]
 
 ## Cities
 
 - [[The City Temples]]: the temples of the cities
 - [[Bluestone]] · [[Hylvynhani Falls]] · [[Maphlamar]] · [[Seawalt 1]] · [[Yhlgrym]]
-- Along the Great Atzch Road: [[Aldyngrad]] · [[Atzch Lake Hall]] · [[Bastion]] · [[Cities/Great Atzch Road/Cascadia|Cascadia (city)]] · [[Choratzch]] · [[Khalzyn]] · [[Ptormvos]] · [[Yirhelm]]
+- Along the Great Atzch Road: [[Aldyngrad]] · [[Atzch Lake Hall]] · [[Bastion]] · [[varif-master/Cities/Great Atzch Road/Cascadia|Cascadia (city)]] · [[Choratzch]] · [[Khalzyn]] · [[Ptormvos]] · [[Yirhelm]]
 
 ## People
 

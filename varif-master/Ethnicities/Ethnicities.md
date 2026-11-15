@@ -6,4 +6,4 @@
 [[Aphian]]
 [[Maphian]]
 [[Shentzi]]
-[[Variff/Ethnicities/Yhlgori|Yhlgori]]
+[[varif-master/Ethnicities/Yhlgori|Yhlgori]]
