@@ -6,9 +6,9 @@ use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// ASSUMPTION: how far a party on foot covers in a day. Replace with the real
-/// figure, or make it depend on the party and the road.
-pub const LEAGUES_PER_DAY: u32 = 6;
+/// How far a party on foot covers in a day. It could later depend on the
+/// party and the road.
+pub const LEAGUES_PER_DAY: u32 = 9;
 
 /// ASSUMPTION: the daily encounter chance on a road the player adds by hand.
 pub const NEW_ROAD_ENCOUNTER_CHANCE: u32 = 15;

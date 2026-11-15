@@ -49,7 +49,7 @@ Inside `varif-core/src`:
 These are marked `ASSUMPTION` in the code and data:
 
 - **Month length:** 45 days, in `calendar.rs`.
-- **Travel speed:** 6 leagues a day, in `command.rs`.
+- **Travel speed:** 9 leagues a day, in `command.rs`.
 - **Distances and encounter chances:** every road in `data/first_leg.ron`.
 - **Start date:** 1 Jhuze 192 zdy.
 - **The cast:** one stand-in person, "The Pylgrym".

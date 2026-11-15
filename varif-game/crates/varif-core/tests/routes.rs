@@ -89,7 +89,7 @@ fn atzhaim_can_be_reached_by_the_road_or_through_maphlia() {
 
     // The Pylgrymage road up the canyon is the quickest way.
     assert_eq!(names(&world, &routes[0].stops), ["Hylvynhani Falls", "Atzhaim"]);
-    assert_eq!(routes[0].days, 4, "the same 4 days as walking it");
+    assert_eq!(routes[0].days, 14, "the same 14 days as walking it");
 
     // The map has many loops, so there are many slower ways. The quickest
     // that avoids the canyon goes round by the south road, Maphlamar and the

@@ -9,8 +9,8 @@
 {
     // ASSUMPTION: Yhlgrym is not drawn on the map. This puts it on the road
     // between Sthepenhall and the falls.
-    "yhlgrym": (1031, 1041),
-    "falls": (1045, 1022),
+    "falls": (1031, 1041),
+    "yhlgrym": (1045, 1022),
     "hylhaim": (1133, 976),
     "heedhaim": (1191, 933),
     "atzhaim": (1150, 938),

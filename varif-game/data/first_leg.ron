@@ -17,7 +17,7 @@
         day: 1,
         // Change the seed to get a different run of road encounters.
         seed: 192,
-        party_at: "yhlgrym",
+        party_at: "idra",
     ),
 
     places: [
@@ -25,8 +25,7 @@
             key: "yhlgrym",
             name: "Yhlgrym",
             kind: TempleCity,
-            // The region is left out: Yhlgrym lies in the Yhl Water Gap,
-            // south of Shentzlia's southernmost city.
+            region: Shentzlia,
             temple: (
                 krypt_of: "Grymsiere",
                 rite: "Holy Oath and Unification Ceremony",
@@ -132,8 +131,8 @@
             ],
         ),
         (
-            // Seat of Havil Audsen, Governor of Phorva, and home of the
-            // Audsen-Dane household. Its inner district holds a Krypt of
+            // Seat of Governor of Phorva, and home of the
+            // Palace. Its inner district holds a Krypt of
             // Khaska with the Khaskylil's tower. Not a city of the Road.
             key: "maphlamar",
             name: "Maphlamar",
@@ -146,7 +145,7 @@
                 (key: "gate", name: "Gate", kind: Gate), // ASSUMPTION
                 (key: "krypt", name: "Krypt of Khaska", kind: Temple), // In the inner district: towers, a library, a cathedral.
                 (key: "tower", name: "Khaskylil's Tower", kind: Landmark),
-                (key: "estate", name: "Audsen-Dane Estate", kind: Residence), // Shared by the Dane and Audsen Lines, with gardens.
+                (key: "estate", name: "Pentor Palace", kind: Residence), 
                 (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
                 (key: "market", name: "Market", kind: Market), // ASSUMPTION
             ],
@@ -417,101 +416,104 @@
     // The roads follow the map. Where three roads meet at a fork with no town
     // (the map has five), each pair of towns is given its own road through it.
     //
-    // ASSUMPTION: every distance and encounter chance below. Distances marked
-    // "older" were set before the map was traced and are left as they were.
-    // The rest are measured on the map at about 11 pixels of the map image to
-    // a league, the scale the older Maphlamar-Seawalt and Atzhaim-Drazihaim
-    // distances imply, with something added for a winding road.
+    // Every distance is measured along the road as drawn on the map, with
+    // one measuring stick: Maphlamar to Klate, by Corvus, is 80 leagues. That
+    // makes a league about 1.74 pixels of the map image.
+    //
+    // ASSUMPTION: something is added to the measured length where a road
+    // winds (the canyon of the Yhl, the hill tracks), and Yhlgrym's two
+    // roads split the Sthepenhall-falls road at a guessed point.
+    // ASSUMPTION: every encounter chance.
     roads: [
         // ---- The Great Atzch Road and the Great Valley ----
-        (from: "yhlgrym", to: "falls", leagues: 5, encounter_chance: 10), // older
+        (from: "falls", to: "yhlgrym", leagues: 15, encounter_chance: 10),
         // The road up the canyon of the Yhl. An unnamed place is drawn on it
         // a little above the falls. Hylhaim-Shentzli is not on this road.
-        (from: "falls", to: "atzhaim", leagues: 17, encounter_chance: 25),
-        (from: "heedhaim", to: "atzhaim", leagues: 6, encounter_chance: 15), // older
+        (from: "yhlgrym", to: "atzhaim", leagues: 60, encounter_chance: 25),
+        (from: "heedhaim", to: "atzhaim", leagues: 24, encounter_chance: 15),
         // Hylhaim-Shentzli's road ends at a fork on the south shore of the
         // lake, between Atzhaim and Heedhaim.
-        (from: "hylhaim", to: "heedhaim", leagues: 11, encounter_chance: 20), // older
-        (from: "hylhaim", to: "atzhaim", leagues: 11, encounter_chance: 20),
+        (from: "hylhaim", to: "heedhaim", leagues: 50, encounter_chance: 20),
+        (from: "hylhaim", to: "atzhaim", leagues: 47, encounter_chance: 20),
         // Up the west shore to a fork at the head of the lake, where the roads
         // to Drazihaim and Atzchhelm-Ivhaan part.
-        (from: "atzhaim", to: "drazihaim", leagues: 14, encounter_chance: 20), // older
-        (from: "atzchhelm-ivhaan", to: "atzhaim", leagues: 17, encounter_chance: 20),
-        (from: "atzchhelm-ivhaan", to: "drazihaim", leagues: 20, encounter_chance: 20),
-        (from: "drazihaim", to: "khoratzh", leagues: 12, encounter_chance: 20), // older
+        (from: "atzhaim", to: "drazihaim", leagues: 90, encounter_chance: 20),
+        (from: "atzchhelm-ivhaan", to: "atzhaim", leagues: 103, encounter_chance: 20),
+        (from: "atzchhelm-ivhaan", to: "drazihaim", leagues: 125, encounter_chance: 20),
+        (from: "drazihaim", to: "khoratzh", leagues: 50, encounter_chance: 20),
         // Up the east shore to Coplahaim, where the road ends.
-        (from: "heedhaim", to: "atzch-midili", leagues: 6, encounter_chance: 15),
-        (from: "atzch-midili", to: "coplahaim", leagues: 9, encounter_chance: 15),
+        (from: "heedhaim", to: "atzch-midili", leagues: 35, encounter_chance: 15),
+        (from: "atzch-midili", to: "coplahaim", leagues: 56, encounter_chance: 15),
 
         // ---- Yhlmahni and the south road of Maphlia ----
         // ASSUMPTION: Yhlgrym is not on the map; it stands here on the road
         // between Sthepenhall and the falls.
-        (from: "yhlgrym", to: "sthepenhall", leagues: 9, encounter_chance: 20), // older
-        (from: "sthepenhall", to: "ayin-lil", leagues: 5, encounter_chance: 20),
-        (from: "ayin-lil", to: "nihuloz", leagues: 6, encounter_chance: 20),
+        (from: "falls", to: "sthepenhall", leagues: 27, encounter_chance: 20),
+        (from: "sthepenhall", to: "ayin-lil", leagues: 31, encounter_chance: 20),
+        (from: "ayin-lil", to: "nihuloz", leagues: 39, encounter_chance: 20),
         // Aiden rides from Maphlamar to Klate, then on to the Falls, where he
         // meets Emanda: by Corvus, the south road and Sthepenhall.
-        (from: "sthepenhall", to: "pheo", leagues: 9, encounter_chance: 15),
-        (from: "pheo", to: "edun", leagues: 2, encounter_chance: 15),
-        (from: "edun", to: "laad", leagues: 2, encounter_chance: 15),
-        (from: "laad", to: "hases", leagues: 4, encounter_chance: 15),
-        (from: "hases", to: "klate", leagues: 3, encounter_chance: 15),
-        (from: "klate", to: "corvus", leagues: 10, encounter_chance: 15),
-        (from: "corvus", to: "maphlamar", leagues: 3, encounter_chance: 10),
+        (from: "sthepenhall", to: "pheo", leagues: 54, encounter_chance: 15),
+        (from: "pheo", to: "edun", leagues: 14, encounter_chance: 15),
+        (from: "edun", to: "laad", leagues: 13, encounter_chance: 15),
+        (from: "laad", to: "hases", leagues: 23, encounter_chance: 15),
+        (from: "hases", to: "klate", leagues: 21, encounter_chance: 15),
+        (from: "klate", to: "corvus", leagues: 60, encounter_chance: 15),
+        (from: "corvus", to: "maphlamar", leagues: 20, encounter_chance: 10),
 
         // ---- Maphlia's coast ----
-        (from: "maphlamar", to: "seawalt", leagues: 8, encounter_chance: 15), // older
-        (from: "seawalt", to: "danon", leagues: 6, encounter_chance: 15),
-        (from: "seawalt", to: "rhait", leagues: 7, encounter_chance: 15),
-        (from: "rhait", to: "ebyni", leagues: 5, encounter_chance: 15),
+        (from: "maphlamar", to: "seawalt", leagues: 59, encounter_chance: 15),
+        (from: "seawalt", to: "danon", leagues: 35, encounter_chance: 15),
+        (from: "seawalt", to: "rhait", leagues: 43, encounter_chance: 15),
+        (from: "rhait", to: "ebyni", leagues: 29, encounter_chance: 15),
 
         // ---- Aphlora ----
-        (from: "maphlamar", to: "sima", leagues: 12, encounter_chance: 15),
-        (from: "sima", to: "hila", leagues: 1, encounter_chance: 5),
+        (from: "maphlamar", to: "sima", leagues: 74, encounter_chance: 15),
+        (from: "sima", to: "hila", leagues: 6, encounter_chance: 5),
         // East of Hila the road forks, to Idra and to Ebyni.
-        (from: "hila", to: "idra", leagues: 6, encounter_chance: 10),
-        (from: "hila", to: "ebyni", leagues: 7, encounter_chance: 15),
-        (from: "idra", to: "ebyni", leagues: 9, encounter_chance: 15),
-        (from: "sima", to: "allenia", leagues: 7, encounter_chance: 10),
-        (from: "allenia", to: "vormia", leagues: 4, encounter_chance: 10),
+        (from: "hila", to: "idra", leagues: 36, encounter_chance: 10),
+        (from: "hila", to: "ebyni", leagues: 40, encounter_chance: 15),
+        (from: "idra", to: "ebyni", leagues: 58, encounter_chance: 15),
+        (from: "sima", to: "allenia", leagues: 43, encounter_chance: 10),
+        (from: "allenia", to: "vormia", leagues: 22, encounter_chance: 10),
         // East of Vormia the road forks, to Stonesteps and to Porthelm.
-        (from: "vormia", to: "stonesteps", leagues: 10, encounter_chance: 15),
-        (from: "vormia", to: "porthelm", leagues: 9, encounter_chance: 15),
-        (from: "stonesteps", to: "porthelm", leagues: 14, encounter_chance: 15),
+        (from: "vormia", to: "stonesteps", leagues: 61, encounter_chance: 15),
+        (from: "vormia", to: "porthelm", leagues: 54, encounter_chance: 15),
+        (from: "stonesteps", to: "porthelm", leagues: 86, encounter_chance: 15),
         // North-east of Stonesteps three roads meet: from Stonesteps, from
         // Lytzvia and from Penhyla. A fourth runs on east off the screenshot.
-        (from: "stonesteps", to: "penhyla", leagues: 22, encounter_chance: 15),
-        (from: "stonesteps", to: "lytzvia", leagues: 22, encounter_chance: 20),
-        (from: "lytzvia", to: "penhyla", leagues: 25, encounter_chance: 20),
-        (from: "penhyla", to: "ebynshor", leagues: 7, encounter_chance: 10),
+        (from: "stonesteps", to: "penhyla", leagues: 134, encounter_chance: 15),
+        (from: "stonesteps", to: "lytzvia", leagues: 139, encounter_chance: 20),
+        (from: "lytzvia", to: "penhyla", leagues: 157, encounter_chance: 20),
+        (from: "penhyla", to: "ebynshor", leagues: 45, encounter_chance: 10),
 
         // ---- The Triadyk coast ----
         // This road joins nothing else on the screenshot. It runs on
         // north-east from Trystzor.
-        (from: "ulugrozt", to: "vhimyst", leagues: 5, encounter_chance: 15),
-        (from: "vhimyst", to: "trystzor", leagues: 5, encounter_chance: 15),
+        (from: "ulugrozt", to: "vhimyst", leagues: 30, encounter_chance: 15),
+        (from: "vhimyst", to: "trystzor", leagues: 32, encounter_chance: 15),
         // Not drawn on the map: Vinniv'pti is joined to Trystzor for now.
-        (from: "trystzor", to: "vinniv-pti", leagues: 4, encounter_chance: 20),
+        (from: "trystzor", to: "vinniv-pti", leagues: 23, encounter_chance: 20),
 
         // ---- Lesser roads, drawn thinner on the map ----
-        (from: "klate", to: "myvus", leagues: 3, encounter_chance: 20),
-        (from: "myvus", to: "vlenen", leagues: 5, encounter_chance: 20),
-        (from: "vlenen", to: "iden", leagues: 5, encounter_chance: 20),
-        (from: "iden", to: "seawalt", leagues: 5, encounter_chance: 20),
-        (from: "corvus", to: "iden", leagues: 4, encounter_chance: 20),
-        (from: "corvus", to: "vlenen", leagues: 3, encounter_chance: 20),
-        (from: "vlenen", to: "danon", leagues: 9, encounter_chance: 25),
+        (from: "klate", to: "myvus", leagues: 19, encounter_chance: 20),
+        (from: "myvus", to: "vlenen", leagues: 28, encounter_chance: 20),
+        (from: "vlenen", to: "iden", leagues: 30, encounter_chance: 20),
+        (from: "iden", to: "seawalt", leagues: 31, encounter_chance: 20),
+        (from: "corvus", to: "iden", leagues: 23, encounter_chance: 20),
+        (from: "corvus", to: "vlenen", leagues: 20, encounter_chance: 20),
+        (from: "vlenen", to: "danon", leagues: 58, encounter_chance: 25),
         // A track over the hills with switchbacks. Hesseh passes through
         // Drazihaim on his way to Maphlamar: by Atzhaim, Heedhaim and this.
-        (from: "heedhaim", to: "maphlamar", leagues: 22, encounter_chance: 35),
+        (from: "heedhaim", to: "maphlamar", leagues: 134, encounter_chance: 35),
         // Over the mountains from the Great Valley into Aphlora, then down
         // the river to Sima.
-        (from: "atzch-midili", to: "bahour-ilos", leagues: 16, encounter_chance: 30),
-        (from: "bahour-ilos", to: "sima", leagues: 9, encounter_chance: 25),
+        (from: "atzch-midili", to: "bahour-ilos", leagues: 99, encounter_chance: 30),
+        (from: "bahour-ilos", to: "sima", leagues: 53, encounter_chance: 25),
         // The road along the foot of the cliffs, between the Maphyk plateau
         // and the Koloudian desert. It runs on east from Narhutz.
-        (from: "sthepenhall", to: "ayn-daiun", leagues: 23, encounter_chance: 30),
-        (from: "ayn-daiun", to: "narhutz", leagues: 9, encounter_chance: 30),
+        (from: "sthepenhall", to: "ayn-daiun", leagues: 143, encounter_chance: 30),
+        (from: "ayn-daiun", to: "narhutz", leagues: 55, encounter_chance: 30),
     ],
 
     people: [
