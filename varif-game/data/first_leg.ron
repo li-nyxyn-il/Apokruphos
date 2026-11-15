@@ -1,0 +1,78 @@
+// The first leg of the Pylgrymage: Yhlgrym to Atzhaim.
+//
+// Names, Krypts, rites and nedias come from "the city temples.txt" and the
+// map. Everything marked ASSUMPTION is a placeholder to replace.
+#![enable(implicit_some)]
+(
+    start: (
+        // 192 zdy is the year of the Reflections on the Pylgrymage.
+        // ASSUMPTION: the month and day the walk begins.
+        year: 192,
+        month: 1,
+        day: 1,
+        // Change the seed to get a different run of road encounters.
+        seed: 192,
+        party_at: "yhlgrym",
+    ),
+
+    places: [
+        (
+            key: "yhlgrym",
+            name: "Yhlgrym",
+            kind: TempleCity,
+            // The region is left out: Yhlgrym lies in the Yhl Water Gap,
+            // south of Shentzlia's southernmost city.
+            temple: (
+                krypt_of: "Grymsiere",
+                rite: "Holy Oath and Unification Ceremony",
+                nedia: ["History", "Ecumenycal monology"],
+            ),
+        ),
+        (
+            key: "falls",
+            name: "Hylvynhani Falls",
+            kind: Town,
+            region: Shentzlia,
+        ),
+        (
+            key: "hylhaim",
+            name: "Hylhaim-Shentzli",
+            kind: Town,
+            region: Shentzlia,
+        ),
+        (
+            key: "heedhaim",
+            name: "Heedhaim",
+            kind: Town,
+            region: Shentzlia,
+        ),
+        (
+            key: "atzhaim",
+            name: "Atzhaim",
+            kind: TempleCity,
+            region: Shentzlia,
+            temple: (
+                krypt_of: "Phionyx",
+                rite: "Rites of Consummation",
+                nedia: ["Fertility", "Lineology", "Climatology"],
+                // Burned by Felydian and not yet restored.
+                ruined: true,
+            ),
+        ),
+    ],
+
+    // ASSUMPTION: every distance and encounter chance below. The order of
+    // the stops follows the road as drawn on the map.
+    roads: [
+        (from: "yhlgrym", to: "falls", leagues: 5, encounter_chance: 10),
+        (from: "falls", to: "hylhaim", leagues: 14, encounter_chance: 25),
+        (from: "hylhaim", to: "heedhaim", leagues: 11, encounter_chance: 20),
+        (from: "heedhaim", to: "atzhaim", leagues: 6, encounter_chance: 15),
+    ],
+
+    people: [
+        // A stand-in for the player. Followers, prelates and governors go
+        // here once the cast of the era is decided.
+        (key: "pylgrym", name: "The Pylgrym", role: "Pylgrym", at: "yhlgrym", in_party: true),
+    ],
+)

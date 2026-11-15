@@ -1,0 +1,12 @@
+[package]
+name = "varif-cli"
+version.workspace = true
+edition.workspace = true
+description = "A command-line front end for the Varif world model."
+
+[[bin]]
+name = "varif"
+path = "src/main.rs"
+
+[dependencies]
+varif-core = { path = "../varif-core" }

@@ -1,0 +1,9 @@
+[package]
+name = "varif-core"
+version.workspace = true
+edition.workspace = true
+description = "The world model of Varif: state, rules, commands and events. No engine dependencies."
+
+[dependencies]
+serde.workspace = true
+ron.workspace = true
