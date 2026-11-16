@@ -1,19 +1,49 @@
 //! Commands go in, events come out. The rules of the world live here.
 
 use crate::calendar::Date;
-use crate::character::{Role, MAX_ATTITUDE, MIN_ATTITUDE};
+use crate::character::{Role, BASE_FATIGUE, MAX_ATTITUDE, MIN_ATTITUDE};
 use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
-use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, World};
+use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// How far a party on foot covers in a day. It could later depend on the
-/// party and the road.
+/// How far a camped march covers in a calendar day. Pressing on covers
+/// extra leagues that night, fewer as the streak grows.
 pub const LEAGUES_PER_DAY: u32 = 9;
 
 /// ASSUMPTION: the daily encounter chance on a road the player adds by hand.
 pub const NEW_ROAD_ENCOUNTER_CHANCE: u32 = 15;
+
+/// Fatigue a night camped beside the road restores, and never past [`BASE_FATIGUE`].
+const ROAD_CAMP_RESTORE: u32 = 5;
+/// Fatigue a night at an inn or a residence restores, and never past [`BASE_FATIGUE`].
+const INN_RESTORE: u32 = 15;
+/// After pressing on has left a member below this, road camping stops here
+/// until a night at an inn or a residence.
+const ROAD_REST_CEILING: u32 = 50;
+/// Fatigue the first night of pressing on costs. Each further night of the
+/// streak costs [`PRESS_FATIGUE_STEP`] more.
+const PRESS_FATIGUE: u32 = 10;
+const PRESS_FATIGUE_STEP: u32 = 5;
+
+/// Extra leagues the nth night of pressing on adds to that day's march.
+/// Night 1 adds 6, night 2 adds 4, night 3 adds 2, and every later night adds 1.
+fn extra_leagues(night: u32) -> u32 {
+    match night {
+        1 => 6,
+        2 => 4,
+        3 => 2,
+        n if n >= 4 => 1,
+        _ => 0,
+    }
+}
+
+/// Fatigue pressing on costs on night `night` of the current streak.
+/// Night 1 costs 10, then 15, 20, 25, and so on.
+fn press_cost(night: u32) -> u32 {
+    PRESS_FATIGUE.saturating_add(PRESS_FATIGUE_STEP.saturating_mul(night.saturating_sub(1)))
+}
 
 /// Something the player asks the world to do.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +58,8 @@ pub enum Command {
     Walk { to: SiteId },
     /// Make camp where the party stands and pass the night.
     MakeCamp,
+    /// Sleep one night where the party stands, when that is an inn or a residence.
+    Sleep,
     /// Add an entry to the journal.
     WriteJournal { text: String },
     /// Put a new place on the map, joined by a new road to where the party
@@ -77,13 +109,19 @@ pub enum Event {
         from: PlaceId,
         to: PlaceId,
         on: Date,
+        /// Fatigue of each party member who has a sheet, after the night.
+        fatigue: Vec<MemberFatigue>,
     },
-    /// The party went through the night without making camp.
+    /// The party went through the night without making camp. `extra_leagues`
+    /// is how far past a camped day this march reaches.
     PressedOn {
         from: PlaceId,
         to: PlaceId,
         nights_without_camp: u32,
+        extra_leagues: u32,
         on: Date,
+        /// Fatigue of each party member who has a sheet, after the night.
+        fatigue: Vec<MemberFatigue>,
     },
     Arrived {
         at: PlaceId,
@@ -106,6 +144,14 @@ pub enum Event {
     Camped {
         at: PlaceId,
         on: Date,
+    },
+    /// The party slept one night at an inn or a residence.
+    Slept {
+        at: PlaceId,
+        site: SiteId,
+        on: Date,
+        /// Fatigue of each party member who has a sheet, after the night.
+        fatigue: Vec<MemberFatigue>,
     },
     JournalWritten {
         at: PlaceId,
@@ -175,6 +221,17 @@ pub enum CommandError {
     HostilityTowardItself,
     /// The person is not an NPC, so they have no attitude.
     NoAttitude,
+    /// Pressing on would drop a party member's fatigue below zero.
+    TooTired,
+    /// The party is not standing at an inn or a residence.
+    NotAtAnInn,
+}
+
+/// One party member's fatigue after a night that changed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemberFatigue {
+    pub person: PersonId,
+    pub fatigue: u32,
 }
 
 impl fmt::Display for CommandError {
@@ -211,9 +268,16 @@ impl fmt::Display for CommandError {
                 )
             }
             CommandError::HostilityTowardItself => {
-                write!(f, "a faction's hostility toward itself stays at {MAX_HOSTILITY}")
+                write!(
+                    f,
+                    "a faction's hostility toward itself stays at {MAX_HOSTILITY}"
+                )
             }
             CommandError::NoAttitude => write!(f, "they have no attitude toward the player"),
+            CommandError::TooTired => write!(f, "the party is too tired to press on"),
+            CommandError::NotAtAnInn => {
+                write!(f, "the party is not at an inn or a residence")
+            }
         }
     }
 }
@@ -239,6 +303,7 @@ impl World {
             Command::Travel { to } => self.travel(to),
             Command::Walk { to } => self.walk(to),
             Command::MakeCamp => Ok(self.make_camp()),
+            Command::Sleep => self.sleep(),
             Command::WriteJournal { text } => self.write_journal(text),
             Command::AddPlace { name, leagues } => self.add_place(name, leagues),
             Command::Recruit { person } => self.recruit(person),
@@ -349,11 +414,12 @@ impl World {
         let mut journey = Journey {
             from,
             to,
-            days: road.days(),
-            days_walked: 0,
+            leagues: road.leagues,
+            leagues_walked: 0,
             encounter_chance: road.encounter_chance,
         };
-        self.walk_day(&mut journey, &mut events);
+        // Setting out is a camped march. Pressing on is chosen at day's end.
+        self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY);
         Ok(events)
     }
 
@@ -364,25 +430,40 @@ impl World {
         let mut events = Vec::new();
         if camp {
             self.nights_without_camp = 0;
-            events.push(Event::CampedOnRoad { from, to, on });
+            let fatigue = self.restore_on_road();
+            events.push(Event::CampedOnRoad {
+                from,
+                to,
+                on,
+                fatigue,
+            });
+            self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY);
         } else {
-            // FATIGUE: a fatigue system would charge the party for this night
-            // here, using `nights_without_camp`.
-            self.nights_without_camp += 1;
+            let night = self.nights_without_camp + 1;
+            let cost = press_cost(night);
+            if !self.can_afford_press(cost) {
+                return Err(CommandError::TooTired);
+            }
+            let extra = extra_leagues(night);
+            self.nights_without_camp = night;
+            let fatigue = self.spend_fatigue(cost);
             events.push(Event::PressedOn {
                 from,
                 to,
-                nights_without_camp: self.nights_without_camp,
+                nights_without_camp: night,
+                extra_leagues: extra,
                 on,
+                fatigue,
             });
+            self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY + extra);
         }
-        self.walk_day(&mut journey, &mut events);
         Ok(events)
     }
 
-    /// Walks one day of a journey. Afterwards the party has either arrived or
-    /// stops for the night, with the journey saved on the world.
-    fn walk_day(&mut self, journey: &mut Journey, events: &mut Vec<Event>) {
+    /// Walks one day of a journey, covering `leagues_today`. Afterwards the
+    /// party has either arrived or stops for the night, with the journey
+    /// saved on the world.
+    fn walk_day(&mut self, journey: &mut Journey, events: &mut Vec<Event>, leagues_today: u32) {
         let (from, to) = (journey.from, journey.to);
         self.date = self.date.next_day();
         events.push(Event::DayPassed { date: self.date });
@@ -393,14 +474,17 @@ impl World {
                 on: self.date,
             });
         }
-        journey.days_walked += 1;
+        journey.leagues_walked = journey
+            .leagues_walked
+            .saturating_add(leagues_today)
+            .min(journey.leagues);
 
-        if journey.days_walked < journey.days {
+        if journey.leagues_walked < journey.leagues {
             self.journey = Some(*journey);
             events.push(Event::NightFalls {
                 from,
                 to,
-                days_left: journey.days - journey.days_walked,
+                days_left: journey.days_left(),
                 on: self.date,
             });
             return;
@@ -455,6 +539,115 @@ impl World {
             to,
             on: self.date,
         }])
+    }
+
+    fn sleep(&mut self) -> Result<Vec<Event>, CommandError> {
+        let at = self.party_at;
+        let site = self.party_site.ok_or(CommandError::NotAtAnInn)?;
+        let kind = self
+            .place(at)
+            .and_then(|place| place.site(site))
+            .map(|site| site.kind)
+            .ok_or(CommandError::NotAtAnInn)?;
+        if !matches!(kind, SiteKind::Inn | SiteKind::Residence) {
+            return Err(CommandError::NotAtAnInn);
+        }
+
+        let on = self.date;
+        let fatigue = self.restore_at_inn();
+        self.camped = true;
+        self.nights_without_camp = 0;
+        self.date = self.date.next_day();
+        Ok(vec![
+            Event::Slept {
+                at,
+                site,
+                on,
+                fatigue,
+            },
+            Event::DayPassed { date: self.date },
+        ])
+    }
+
+    /// True when every party member who has a sheet can pay `cost`.
+    fn can_afford_press(&self, cost: u32) -> bool {
+        self.people
+            .iter()
+            .filter(|person| person.in_party)
+            .filter_map(|person| person.sheet.as_ref())
+            .all(|sheet| sheet.fatigue >= cost)
+    }
+
+    fn spend_fatigue(&mut self, cost: u32) -> Vec<MemberFatigue> {
+        let mut fatigue = Vec::new();
+        for (index, person) in self.people.iter_mut().enumerate() {
+            if !person.in_party {
+                continue;
+            }
+            let Some(sheet) = person.sheet.as_mut() else {
+                continue;
+            };
+            sheet.fatigue = sheet.fatigue.saturating_sub(cost);
+            if sheet.fatigue < ROAD_REST_CEILING {
+                sheet.road_rest_debt = true;
+            }
+            fatigue.push(MemberFatigue {
+                person: PersonId(index as u32),
+                fatigue: sheet.fatigue,
+            });
+        }
+        fatigue
+    }
+
+    fn restore_on_road(&mut self) -> Vec<MemberFatigue> {
+        let mut fatigue = Vec::new();
+        for (index, person) in self.people.iter_mut().enumerate() {
+            if !person.in_party {
+                continue;
+            }
+            let Some(sheet) = person.sheet.as_mut() else {
+                continue;
+            };
+            let current = sheet.fatigue;
+            let restored = current.saturating_add(ROAD_CAMP_RESTORE).min(BASE_FATIGUE);
+            sheet.fatigue = if sheet.road_rest_debt {
+                restored.min(ROAD_REST_CEILING.max(current))
+            } else {
+                restored
+            };
+            fatigue.push(MemberFatigue {
+                person: PersonId(index as u32),
+                fatigue: sheet.fatigue,
+            });
+        }
+        fatigue
+    }
+
+    fn restore_at_inn(&mut self) -> Vec<MemberFatigue> {
+        let mut fatigue = Vec::new();
+        for (index, person) in self.people.iter_mut().enumerate() {
+            if !person.in_party {
+                continue;
+            }
+            let Some(sheet) = person.sheet.as_mut() else {
+                continue;
+            };
+            let restored = if sheet.fatigue < ROAD_REST_CEILING {
+                sheet
+                    .fatigue
+                    .saturating_add(INN_RESTORE)
+                    .max(ROAD_REST_CEILING)
+            } else {
+                sheet.fatigue.saturating_add(INN_RESTORE)
+            };
+            sheet.fatigue = restored.min(BASE_FATIGUE);
+            sheet.road_rest_debt = false;
+            fatigue.push(MemberFatigue {
+                person: PersonId(index as u32),
+                fatigue: sheet.fatigue,
+            });
+        }
+        fatigue
     }
 
     fn make_camp(&mut self) -> Vec<Event> {

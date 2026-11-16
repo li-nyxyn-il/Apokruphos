@@ -345,10 +345,16 @@ pub struct Character {
     #[serde(default = "base_health")]
     pub health: u32,
     /// How much road the body has left in it. A new character starts at
-    /// [`BASE_FATIGUE`]. Nothing spends it yet; nights without camp on the
-    /// world are the hook.
+    /// [`BASE_FATIGUE`], and rest never raises it above that. Pressing on
+    /// spends it. Camping on the road and a night at an inn or residence
+    /// restore some.
     #[serde(default = "base_fatigue")]
     pub fatigue: u32,
+    /// Set when pressing on has left fatigue below 50. While it is set,
+    /// camping on the road will not raise fatigue above 50. A night at an
+    /// inn or a residence clears it.
+    #[serde(default)]
+    pub road_rest_debt: bool,
     /// How well the character weathers what the road does to them. A new
     /// character starts at [`BASE_RESILIENCE`].
     #[serde(default = "base_resilience")]
@@ -409,6 +415,7 @@ impl Character {
             akstada,
             health: base_health(),
             fatigue: base_fatigue(),
+            road_rest_debt: false,
             resilience: base_resilience(),
             tongues,
             background: background.into(),

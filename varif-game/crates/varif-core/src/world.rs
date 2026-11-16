@@ -139,7 +139,8 @@ impl Road {
         (self.a == x && self.b == y) || (self.a == y && self.b == x)
     }
 
-    /// How many days it takes to walk the road.
+    /// How many days a camped march takes. Pressing on can finish the road
+    /// in fewer calendar days; that is settled while the party walks.
     pub fn days(&self) -> u32 {
         self.leagues
             .div_ceil(crate::command::LEAGUES_PER_DAY)
@@ -218,17 +219,38 @@ impl Person {
     }
 }
 
-/// A walk of more than one day that is under way. Between days the party
-/// waits on the road for the player to say whether it camps for the night.
+/// A walk that is under way. Between days the party waits on the road for
+/// the player to say whether it camps for the night.
+///
+/// A camped day covers [`crate::command::LEAGUES_PER_DAY`] leagues. Pressing
+/// on covers more, so the march is kept in leagues and the party arrives on
+/// however many calendar days it actually spends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Journey {
     pub from: PlaceId,
     pub to: PlaceId,
-    /// How many days the whole walk takes.
-    pub days: u32,
-    /// How many of those days are already behind the party.
-    pub days_walked: u32,
+    /// The length of the road.
+    pub leagues: u32,
+    /// How many of those leagues are already behind the party.
+    pub leagues_walked: u32,
     pub encounter_chance: u32,
+}
+
+impl Journey {
+    /// Leagues still ahead.
+    pub fn leagues_left(self) -> u32 {
+        self.leagues.saturating_sub(self.leagues_walked)
+    }
+
+    /// Calendar days the rest of the road would take at a camped march.
+    pub fn days_left(self) -> u32 {
+        let left = self.leagues_left();
+        if left == 0 {
+            0
+        } else {
+            left.div_ceil(crate::command::LEAGUES_PER_DAY)
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -260,8 +282,10 @@ pub struct World {
     /// `Some`, the world waits for a [`crate::Command::EndDay`].
     #[serde(default)]
     pub journey: Option<Journey>,
-    /// Nights in a row the party has gone without making camp. Nothing reads
-    /// this yet: it is the hook for spending a character's fatigue.
+    /// Nights in a row the party has pressed on without camping. The next
+    /// press is night `nights_without_camp + 1`: it costs more fatigue and
+    /// adds fewer extra leagues as the streak grows. Camping, and a night at
+    /// an inn or a residence, sets this back to zero.
     #[serde(default)]
     pub nights_without_camp: u32,
     /// How hostile each faction is toward each other faction right now.

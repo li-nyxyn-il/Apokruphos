@@ -1,8 +1,6 @@
 //! The calendar: eight months and five weekdays.
 //!
-//! ASSUMPTION: the notes give the month and weekday names but not the length
-//! of a month. Forty-five days (nine five-day weeks) gives a 360-day year.
-//! Change `DAYS_PER_MONTH` when the real figure is decided.
+//! A month is fifty days (ten five-day weeks). Eight months make a 400-day year.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -13,7 +11,7 @@ pub const MONTHS: [&str; 8] = [
 
 pub const WEEKDAYS: [&str; 5] = ["Arden", "Bhurden", "Fiurden", "Dereden", "Seldyn"];
 
-pub const DAYS_PER_MONTH: u32 = 45;
+pub const DAYS_PER_MONTH: u32 = 50;
 pub const DAYS_PER_YEAR: u32 = DAYS_PER_MONTH * MONTHS.len() as u32;
 
 /// A day in the zdy reckoning.
