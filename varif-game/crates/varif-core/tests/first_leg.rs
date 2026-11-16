@@ -79,7 +79,7 @@ fn the_party_walks_from_yhlgrym_to_atzhaim() {
         ]
     );
 
-    // 60 leagues up the canyon at 9 leagues a day: 7 days.
+    // 60 leagues at a camped 9 leagues a day: 7 days.
     assert_eq!(world.date.days_since(start), 7);
     let days_passed = events
         .iter()
@@ -320,7 +320,7 @@ fn a_long_walk_stops_each_night_to_ask_about_camp() {
         Some(Event::NightFalls { days_left: 2, .. })
     ));
     let journey = world.journey.expect("the party is on the road");
-    assert_eq!((journey.days, journey.days_walked), (3, 1));
+    assert_eq!((journey.leagues, journey.leagues_walked), (27, 9));
     assert_eq!(world.party_at, falls, "the party has not arrived yet");
 
     let events = world.apply(Command::EndDay { camp: true }).unwrap();
@@ -354,17 +354,40 @@ fn nights_without_camp_are_counted_until_the_party_camps() {
     world.apply(Command::Travel { to: sthepenhall }).unwrap();
     finish_journey(&mut world, false);
     assert_eq!(world.nights_without_camp, 2);
+    // Two presses cost 10, then 15. Both members started at 100.
+    assert_eq!(party_fatigue(&world), [75, 75]);
+    assert_eq!(party_debt(&world), [false, false]);
 
-    // The count carries on to the next road, and camping clears it.
+    // The count carries on to the next road, so the next presses are nights
+    // 3 and 4 (20, then 25). 30 is below 50, which sets the road-rest debt.
+    // Making camp clears the streak and does not restore fatigue.
     world.apply(Command::Travel { to: falls }).unwrap();
     finish_journey(&mut world, false);
     assert_eq!(world.nights_without_camp, 4);
+    assert_eq!(party_fatigue(&world), [30, 30]);
+    assert_eq!(party_debt(&world), [true, true]);
     world.apply(Command::MakeCamp).unwrap();
     assert_eq!(world.nights_without_camp, 0);
+    assert_eq!(party_fatigue(&world), [30, 30]);
+    assert_eq!(party_debt(&world), [true, true]);
+}
+
+fn party_fatigue(world: &World) -> Vec<u32> {
+    world
+        .party()
+        .filter_map(|person| person.sheet.as_ref().map(|sheet| sheet.fatigue))
+        .collect()
+}
+
+fn party_debt(world: &World) -> Vec<bool> {
+    world
+        .party()
+        .filter_map(|person| person.sheet.as_ref().map(|sheet| sheet.road_rest_debt))
+        .collect()
 }
 
 #[test]
-fn camping_or_not_the_walk_takes_the_same_days() {
+fn pressing_on_arrives_sooner_than_camping() {
     let mut camping = first_leg();
     let mut pressing = first_leg();
     let start = camping.date;
@@ -375,8 +398,10 @@ fn camping_or_not_the_walk_takes_the_same_days() {
             finish_journey(world, camp);
         }
     }
+    // 60 leagues. Camping is 7 days of 9. Pressing covers 9, then 15, 13, 11,
+    // 10 and 10, and arrives on day 6.
     assert_eq!(camping.date.days_since(start), 7);
-    assert_eq!(pressing.date, camping.date);
+    assert_eq!(pressing.date.days_since(start), 6);
 }
 
 #[test]
@@ -392,6 +417,7 @@ fn on_the_road_only_the_night_can_be_answered() {
         Err(CommandError::OnTheRoad)
     );
     assert_eq!(world.apply(Command::MakeCamp), Err(CommandError::OnTheRoad));
+    assert_eq!(world.apply(Command::Sleep), Err(CommandError::OnTheRoad));
     assert_eq!(
         world.apply(Command::WriteJournal {
             text: "A note.".to_string()

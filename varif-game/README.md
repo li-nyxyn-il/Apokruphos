@@ -45,13 +45,13 @@ Inside `varif-core/src`:
 - **Things refer to each other by ID.** A person stores a `PlaceId`, not a reference to a place.
 - **Change goes through commands.** A front end calls `world.apply(command)` and gets back a list of events, or an error that changed nothing.
 - **It is deterministic.** The random number generator is part of the world, so the same seed and commands always give the same history.
+- **The calendar.** Eight months of 50 days, so a year is 400 days.
 
 ## Placeholders to replace
 
 These are marked `ASSUMPTION` in the code and data:
 
-- **Month length:** 45 days, in `calendar.rs`.
-- **Travel speed:** 9 leagues a day, in `command.rs`.
+- **Travel speed:** 9 leagues a day for a camped march, in `command.rs`. Pressing on covers more.
 - **Distances and encounter chances:** every road in `data/first_leg.ron`.
 - **Start date:** 1 Jhuze 192 zdy.
 - **The cast:** one stand-in person, "The Pylgrym".
