@@ -28,7 +28,8 @@ fn walk(world: &mut World, stops: &[&str]) -> Vec<Event> {
                 .expect("the road should exist"),
         );
         while world.journey.is_some() {
-            events.extend(world.apply(Command::EndDay { camp: true }).unwrap());
+            events.extend(world.apply(Command::MakeCamp).unwrap());
+            events.extend(world.apply(Command::Rest).unwrap());
         }
     }
     events

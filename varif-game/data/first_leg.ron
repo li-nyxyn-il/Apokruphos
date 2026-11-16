@@ -521,7 +521,8 @@
         // here once the cast of the era is decided.
         // ASSUMPTION: the whole sheet, until character creation chooses it.
         // Health, fatigue, resilience and level are left out, so they stay
-        // at their base, and the inventory starts empty.
+        // at their base. The pack is the party's starting supplies.
+        // Weight, value and durability are 1 until a rule names them.
         (
             key: "pylgrym",
             name: "The Pylgrym",
@@ -537,6 +538,12 @@
                 tongues: [Shentz, Maphlian],
                 background: "Pylgrym",
                 primary: Player,
+                inventory: [
+                    (name: "Wood", type: Wood, weight: 1, value: 1, count: 5, durability: 1),
+                    (name: "Water", type: Water, weight: 1, value: 1, count: 5, durability: 1),
+                    (name: "Food", type: Food, weight: 1, value: 1, count: 5, durability: 1),
+                    (name: "Copper", type: Copper, weight: 1, value: 1, count: 10, durability: 1),
+                ],
             ),
         ),
 

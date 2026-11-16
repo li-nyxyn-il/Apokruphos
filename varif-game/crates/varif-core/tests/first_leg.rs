@@ -1,6 +1,6 @@
 //! Tests that read like the journey: load the first leg and walk it.
 
-use varif_core::{load_world, Command, CommandError, Date, Event, Item, World, FOOD, WATER, WOOD};
+use varif_core::{load_world, Command, CommandError, Date, Event, World};
 
 const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
 
@@ -25,14 +25,24 @@ fn walk(world: &mut World, stops: &[&str]) -> Vec<Event> {
 }
 
 /// Answers every night of the journey under way the same way.
+/// Camping pitches camp, then sleeps. That sleep is the camped march.
 fn finish_journey(world: &mut World, camp: bool) -> Vec<Event> {
     let mut events = Vec::new();
     while world.journey.is_some() {
-        events.extend(
-            world
-                .apply(Command::EndDay { camp })
-                .expect("the party is on the road"),
-        );
+        if camp {
+            events.extend(
+                world
+                    .apply(Command::MakeCamp)
+                    .expect("the party can pitch camp"),
+            );
+            events.extend(world.apply(Command::Rest).expect("the party can sleep"));
+        } else {
+            events.extend(
+                world
+                    .apply(Command::EndDay { camp: false })
+                    .expect("the party is on the road"),
+            );
+        }
     }
     events
 }
@@ -332,12 +342,34 @@ fn a_long_walk_stops_each_night_to_ask_about_camp() {
     assert_eq!((journey.leagues, journey.leagues_walked), (27, 9));
     assert_eq!(world.party_at, falls, "the party has not arrived yet");
 
-    let events = world.apply(Command::EndDay { camp: true }).unwrap();
-    assert!(matches!(events.first(), Some(Event::CampedOnRoad { .. })));
+    // The road prompt pitches camp. The day, the fatigue and the streak stay.
+    for person in world.people.iter_mut().filter(|person| person.in_party) {
+        if let Some(sheet) = person.sheet.as_mut() {
+            sheet.fatigue = 80;
+        }
+    }
+    world.nights_without_camp = 3;
+    let date = world.date;
+    let walked = world.journey.unwrap().leagues_walked;
+    let events = world.apply(Command::MakeCamp).unwrap();
+    assert!(matches!(events.as_slice(), [Event::CampedOnRoad { .. }]));
+    assert!(world.camped);
+    assert_eq!(world.date, date);
+    assert_eq!(world.nights_without_camp, 3);
+    assert_eq!(party_fatigue(&world), [80, 80]);
+    assert_eq!(world.journey.unwrap().leagues_walked, walked);
+
+    // Sleep spends the night and walks the camped day.
+    let events = world.apply(Command::Rest).unwrap();
+    assert!(matches!(events.first(), Some(Event::Rested { .. })));
     assert!(matches!(
         events.last(),
         Some(Event::NightFalls { days_left: 1, .. })
     ));
+    assert_eq!(world.date, date.next_day());
+    assert!(!world.camped);
+    assert_eq!(world.nights_without_camp, 0);
+    assert_eq!(party_fatigue(&world), [85, 85]);
 
     let events = world.apply(Command::EndDay { camp: false }).unwrap();
     assert!(matches!(
@@ -377,7 +409,14 @@ fn nights_without_camp_are_counted_until_the_party_camps() {
     assert_eq!(world.nights_without_camp, 4);
     assert_eq!(party_fatigue(&world), [30, 30]);
     assert_eq!(party_debt(&world), [true, true]);
-    stock_camp_supplies(&mut world);
+
+    // The falls are a town, so the camp is pitched back on the road.
+    // Pitching still neither clears the streak nor restores fatigue.
+    // Sleeping does both, and the debt keeps the restore from passing 50.
+    let yhlgrym = world.find_place("yhlgrym").unwrap();
+    world.apply(Command::Travel { to: yhlgrym }).unwrap();
+    assert_eq!(world.nights_without_camp, 4);
+    assert_eq!(party_fatigue(&world), [30, 30]);
     let camped_on = world.date;
     world.apply(Command::MakeCamp).unwrap();
     assert!(world.camped);
@@ -389,22 +428,6 @@ fn nights_without_camp_are_counted_until_the_party_camps() {
     assert_eq!(party_fatigue(&world), [35, 35]);
     assert_eq!(party_debt(&world), [true, true]);
     assert_eq!(world.date, camped_on.next_day());
-}
-
-fn stock_camp_supplies(world: &mut World) {
-    let sheet = world
-        .people
-        .iter_mut()
-        .find(|person| person.key == "pylgrym")
-        .and_then(|person| person.sheet.as_mut())
-        .expect("pylgrym should have a sheet");
-    for (key, name) in [(FOOD, "Food"), (WATER, "Water"), (WOOD, "Wood")] {
-        sheet.carry(Item {
-            key: key.to_string(),
-            name: name.to_string(),
-            count: 1,
-        });
-    }
 }
 
 fn party_fatigue(world: &World) -> Vec<u32> {
@@ -451,9 +474,8 @@ fn on_the_road_only_the_night_can_be_answered() {
         world.apply(Command::Travel { to: falls }),
         Err(CommandError::OnTheRoad)
     );
-    assert_eq!(world.apply(Command::MakeCamp), Err(CommandError::OnTheRoad));
-    assert_eq!(world.apply(Command::Rest), Err(CommandError::OnTheRoad));
-    assert_eq!(world.apply(Command::PackUp), Err(CommandError::OnTheRoad));
+    assert_eq!(world.apply(Command::Rest), Err(CommandError::NotCamped));
+    assert_eq!(world.apply(Command::PackUp), Err(CommandError::NotCamped));
     assert_eq!(world.apply(Command::Sleep), Err(CommandError::OnTheRoad));
     assert_eq!(
         world.apply(Command::WriteJournal {

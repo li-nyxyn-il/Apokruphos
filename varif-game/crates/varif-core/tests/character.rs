@@ -1,8 +1,9 @@
 //! The player sheet: what a valid character is, and what the data file may say.
 
 use varif_core::{
-    load_world, Akstada, Blood, DataError, Heritage, Item, Role, SheetError, Tongue, World,
-    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE,
+    load_world, Akstada, Blood, DataError, Heritage, Item, ItemType, Role, SheetError, Tongue,
+    World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, SUPPLY_DURABILITY, SUPPLY_VALUE,
+    SUPPLY_WEIGHT,
 };
 
 const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
@@ -72,8 +73,16 @@ fn the_pylgrym_starts_from_the_base() {
     assert_eq!(sheet.fatigue, BASE_FATIGUE);
     assert_eq!(sheet.resilience, BASE_RESILIENCE);
     assert_eq!(sheet.level, BASE_LEVEL);
-    assert!(sheet.inventory.is_empty());
-    assert_eq!(sheet.holding("knife"), 0);
+    assert_eq!(sheet.holding(ItemType::Wood), 5);
+    assert_eq!(sheet.holding(ItemType::Water), 5);
+    assert_eq!(sheet.holding(ItemType::Food), 5);
+    assert_eq!(sheet.holding(ItemType::Copper), 10);
+    assert!(sheet.inventory.iter().all(|item| {
+        item.weight == SUPPLY_WEIGHT
+            && item.value == SUPPLY_VALUE
+            && item.durability == SUPPLY_DURABILITY
+    }));
+    assert_eq!(sheet.holding_goods("knife"), 0);
 }
 
 #[test]
@@ -110,36 +119,36 @@ fn a_sheet_needs_a_tongue_and_a_background() {
 }
 
 #[test]
-fn the_inventory_stacks_by_key() {
+fn the_inventory_stacks_by_type() {
     let mut world = with_sheet(
         "Player",
         20,
         "Aphlian",
         "Carter",
-        r#"inventory: [(key: "knife", name: "Knife", count: 1)]"#,
+        r#"inventory: [(name: "Knife", type: Goods, weight: 1, value: 1, count: 1, durability: 1)]"#,
     )
     .expect("one knife is a valid inventory");
     let sheet = world.people[0].sheet.as_mut().unwrap();
-    assert_eq!(sheet.holding("knife"), 1);
+    assert_eq!(sheet.holding_goods("Knife"), 1);
 
-    sheet.carry(Item {
-        key: "knife".to_string(),
-        name: "Knife".to_string(),
-        count: 2,
-    });
-    sheet.carry(Item {
-        key: "rope".to_string(),
-        name: "Rope".to_string(),
-        count: 1,
-    });
-    sheet.carry(Item {
-        key: "rope".to_string(),
-        name: "Rope".to_string(),
-        count: 0,
-    });
-    assert_eq!(sheet.holding("knife"), 3);
-    assert_eq!(sheet.holding("rope"), 1);
-    assert_eq!(sheet.inventory.len(), 2);
+    sheet.carry(Item::goods("Knife", 2));
+    sheet.carry(Item::goods("Rope", 1));
+    sheet.carry(Item::goods("Rope", 0));
+    sheet.carry(Item::supply(ItemType::Food, 2));
+    sheet.carry(Item::supply(ItemType::Food, 3));
+    assert_eq!(sheet.holding_goods("Knife"), 3);
+    assert_eq!(sheet.holding_goods("Rope"), 1);
+    assert_eq!(sheet.holding(ItemType::Food), 5);
+    let food = sheet
+        .inventory
+        .iter()
+        .find(|item| item.item_type == ItemType::Food)
+        .unwrap();
+    assert_eq!(
+        (food.weight, food.value, food.count, food.durability),
+        (SUPPLY_WEIGHT, SUPPLY_VALUE, 5, SUPPLY_DURABILITY)
+    );
+    assert_eq!(sheet.inventory.len(), 3);
 
     let saved = World::from_ron(&world.to_ron().unwrap()).unwrap();
     assert_eq!(saved, world);
@@ -153,7 +162,7 @@ fn a_bad_inventory_is_reported() {
             20,
             "Shentz",
             "Farmer",
-            r#"inventory: [(key: "knife", name: "Knife", count: 0)]"#,
+            r#"inventory: [(name: "Knife", type: Goods, count: 0)]"#,
         )),
         SheetError::EmptyStack("Knife".to_string())
     );
@@ -163,7 +172,7 @@ fn a_bad_inventory_is_reported() {
             20,
             "Shentz",
             "Farmer",
-            r#"inventory: [(key: "", name: "Knife", count: 1)]"#,
+            r#"inventory: [(name: "  ", type: Goods, count: 1)]"#,
         )),
         SheetError::BlankItem
     );
@@ -174,11 +183,11 @@ fn a_bad_inventory_is_reported() {
             "Shentz",
             "Farmer",
             r#"inventory: [
-                (key: "knife", name: "Knife", count: 1),
-                (key: "knife", name: "Other knife", count: 1),
+                (name: "Knife", type: Goods, count: 1),
+                (name: "Knife", type: Goods, count: 1),
             ]"#,
         )),
-        SheetError::DuplicateItem("knife".to_string())
+        SheetError::DuplicateItem("Knife".to_string())
     );
 }
 

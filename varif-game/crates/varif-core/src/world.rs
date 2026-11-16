@@ -281,13 +281,14 @@ pub struct World {
     pub camped: bool,
     pub journal: Vec<JournalEntry>,
     /// The walk in progress, if the party is between places. While it is
-    /// `Some`, the world waits for a [`crate::Command::EndDay`].
+    /// `Some`, the world waits for camp, sleep, pack up, or pressing on.
     #[serde(default)]
     pub journey: Option<Journey>,
-    /// Nights in a row the party has pressed on without camping. The next
+    /// Nights in a row the party has pressed on without sleeping. The next
     /// press is night `nights_without_camp + 1`: it costs more fatigue and
-    /// adds fewer extra leagues as the streak grows. Camping, and a night at
-    /// an inn or a residence, sets this back to zero.
+    /// adds fewer extra leagues as the streak grows. Sleeping in camp, and a
+    /// night at an inn or a residence, sets this back to zero. Pitching camp
+    /// does not.
     #[serde(default)]
     pub nights_without_camp: u32,
     /// How hostile each faction is toward each other faction right now.
