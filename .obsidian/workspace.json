@@ -207,6 +207,8 @@
   },
   "active": "aa9f3333af4d7735",
   "lastOpenFiles": [
+    "varif-game/crates/varif-core/tests/fatigue.rs",
+    "varif-game/crates/varif-core/tests/camp.rs",
     "varif-game/target/debug/build/varif-core/370792cf2d399e80/fingerprint/output-test-integration-test-first_leg",
     "varif-game/target/debug/build/varif-core/15d35c4b1301362f/fingerprint/output-test-integration-test-party",
     "varif-game/target/debug/build/varif-core/7ff300b49b5aa7f7/fingerprint/test-integration-test-factions.json",
@@ -216,8 +218,6 @@
     "varif-game/target/debug/build/varif-core/370792cf2d399e80/out/first_leg-370792cf2d399e80.1txczpk57jxg5v68wnyld6n4j.0gklgql.rcgu.o",
     "varif-game/target/debug/build/varif-core/370792cf2d399e80/out/first_leg-370792cf2d399e80.28abskgwq4eim8df8zz0sf5xb.0gklgql.rcgu.o",
     "varif-game/target/debug/build/varif-core/370792cf2d399e80/out/first_leg-370792cf2d399e80.28qm3dmzgudlk1vwztl0gmt03.0gklgql.rcgu.o",
-    "varif-game/target/debug/build/varif-core/370792cf2d399e80/out/first_leg-370792cf2d399e80.2k5tcdefhrfjr97i9ory4czd8.0gklgql.rcgu.o",
-    "varif-game/target/debug/build/varif-core/370792cf2d399e80/out/first_leg-370792cf2d399e80.2ls9wl9eiaoickypke1aprll2.0gklgql.rcgu.o",
     "varif-art/references/concept-art/utzkvahjun_north_shentz_valley.jpg",
     "varif-art/references/concept-art/atzh_lake_south_shentz_valley.jpg",
     "varif-art/references/inverted_eyes/blue_blood_inverted_yellow.png",
