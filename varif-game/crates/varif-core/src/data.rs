@@ -5,6 +5,7 @@
 
 use crate::calendar::Date;
 use crate::character::{Character, SheetError};
+use crate::faction::Hostility;
 use crate::ids::PlaceId;
 use crate::rng::Rng;
 use crate::world::{Person, Place, Road, SiteKind, World};
@@ -48,6 +49,8 @@ struct PersonData {
     at: String,
     #[serde(default)]
     in_party: bool,
+    #[serde(default)]
+    recruitable: bool,
     #[serde(default)]
     sheet: Option<Character>,
 }
@@ -178,7 +181,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
 
     let mut people: Vec<Person> = Vec::new();
     let mut seen_player = false;
-    for person in data.people {
+    for mut person in data.people {
         if people.iter().any(|p| p.key == person.key) {
             return Err(DataError::DuplicatePerson(person.key));
         }
@@ -188,7 +191,8 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         } else {
             lookup(&person.at, &person.name)?
         };
-        if let Some(sheet) = &person.sheet {
+        if let Some(sheet) = &mut person.sheet {
+            sheet.adopt_player_faction();
             sheet.check().map_err(|error| DataError::BadSheet {
                 person: person.name.clone(),
                 error,
@@ -206,6 +210,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             title: person.title,
             at,
             in_party: person.in_party,
+            recruitable: person.recruitable,
             sheet: person.sheet,
         });
     }
@@ -222,5 +227,6 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         journal: Vec::new(),
         journey: None,
         nights_without_camp: 0,
+        hostility: Hostility::starting(),
     })
 }

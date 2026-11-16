@@ -12,17 +12,20 @@ pub mod calendar;
 pub mod character;
 pub mod command;
 pub mod data;
+pub mod faction;
 pub mod ids;
 pub mod rng;
 pub mod world;
 
 pub use calendar::Date;
 pub use character::{
-    Akstada, Blood, Character, Heritage, Item, Role, SheetError, Tongue, BASE_FATIGUE, BASE_HEALTH,
-    BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
+    Akstada, Blood, Character, Heritage, Item, Role, SheetError, Tongue, BASE_ATTITUDE,
+    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_ATTITUDE, MIN_AGE,
+    MIN_ATTITUDE,
 };
 pub use command::{Command, CommandError, Event};
 pub use data::{load_world, DataError};
+pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};
 pub use rng::Rng;
 pub use world::{

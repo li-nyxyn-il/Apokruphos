@@ -5,6 +5,7 @@
 //! is the [`crate::Person`] they belong to. A person named only as cast can
 //! still leave the sheet empty.
 
+use crate::faction::FactionId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -22,6 +23,13 @@ pub const BASE_RESILIENCE: u32 = 100;
 /// Level a new character starts at.
 pub const BASE_LEVEL: u32 = 1;
 
+/// Lowest attitude an NPC can hold toward the player. 0 is set against them.
+pub const MIN_ATTITUDE: u32 = 0;
+/// Highest attitude. 100 is devoted to the player.
+pub const MAX_ATTITUDE: u32 = 100;
+/// Attitude a new NPC starts at: neither set against the player nor devoted.
+pub const BASE_ATTITUDE: u32 = 50;
+
 /// The colour of a person's blood. The Neck sorts people by it, and it is
 /// the world's notion of race.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +44,8 @@ pub enum Blood {
 }
 
 impl Blood {
+    pub const ALL: [Blood; 3] = [Blood::Red, Blood::Blue, Blood::Black];
+
     pub fn name(self) -> &'static str {
         match self {
             Blood::Red => "red",
@@ -64,6 +74,18 @@ pub enum Heritage {
 }
 
 impl Heritage {
+    pub const ALL: [Heritage; 9] = [
+        Heritage::Aphlian,
+        Heritage::Maphlian,
+        Heritage::Shentzi,
+        Heritage::Ptormic,
+        Heritage::Vhinhili,
+        Heritage::Yhlgori,
+        Heritage::Yhlmahni,
+        Heritage::Theylix,
+        Heritage::Zechi,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Heritage::Aphlian => "Aphlian",
@@ -108,6 +130,30 @@ pub enum Akstada {
 }
 
 impl Akstada {
+    pub const ALL: [Akstada; 21] = [
+        Akstada::Thief,
+        Akstada::Forgotten,
+        Akstada::Harbinger,
+        Akstada::Raven,
+        Akstada::Crow,
+        Akstada::BloodSage,
+        Akstada::Chisel,
+        Akstada::Dragon,
+        Akstada::Lamb,
+        Akstada::Wretched,
+        Akstada::Vagybonde,
+        Akstada::Pylgrym,
+        Akstada::Wraith,
+        Akstada::WillowMan,
+        Akstada::Wall,
+        Akstada::Flame,
+        Akstada::Sprait,
+        Akstada::Bastion,
+        Akstada::Acolyte,
+        Akstada::Fox,
+        Akstada::Hare,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Akstada::Thief => "the Thief",
@@ -154,6 +200,19 @@ pub enum Tongue {
 }
 
 impl Tongue {
+    pub const ALL: [Tongue; 10] = [
+        Tongue::Aphlian,
+        Tongue::Maphlian,
+        Tongue::Shentz,
+        Tongue::OldShentz,
+        Tongue::Ptormyk,
+        Tongue::Vinhili,
+        Tongue::Yhlgori,
+        Tongue::Ecumene,
+        Tongue::Koloudian,
+        Tongue::Kamloran,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Tongue::Aphlian => "Aphlian",
@@ -175,9 +234,18 @@ impl Tongue {
 pub enum Role {
     Player,
     /// `follower` is true once this NPC travels in the player's service.
+    /// `attitude` is their personal stance toward the player, from 0 to 100.
+    /// Nothing reads it yet: together with faction hostility, it will decide
+    /// whether this NPC is hostile.
     Npc {
         follower: bool,
+        #[serde(default = "base_attitude")]
+        attitude: u32,
     },
+}
+
+fn base_attitude() -> u32 {
+    BASE_ATTITUDE
 }
 
 impl Role {
@@ -193,7 +261,15 @@ impl Role {
     }
 
     pub fn is_follower(self) -> bool {
-        matches!(self, Role::Npc { follower: true })
+        matches!(self, Role::Npc { follower: true, .. })
+    }
+
+    /// The NPC's attitude toward the player. The player has none.
+    pub fn attitude(self) -> Option<u32> {
+        match self {
+            Role::Npc { attitude, .. } => Some(attitude),
+            Role::Player => None,
+        }
     }
 }
 
@@ -217,6 +293,9 @@ pub enum SheetError {
     BlankItem,
     EmptyStack(String),
     DuplicateItem(String),
+    AttitudeOutOfRange(u32),
+    FactionRepeated(FactionId),
+    FollowerWithoutPlayerFaction,
 }
 
 impl fmt::Display for SheetError {
@@ -233,6 +312,18 @@ impl fmt::Display for SheetError {
             SheetError::BlankItem => write!(f, "an item has no key or no name"),
             SheetError::EmptyStack(name) => write!(f, "none of \"{name}\" are carried"),
             SheetError::DuplicateItem(key) => write!(f, "\"{key}\" is carried twice"),
+            SheetError::AttitudeOutOfRange(attitude) => {
+                write!(
+                    f,
+                    "attitude {attitude} is outside {MIN_ATTITUDE} to {MAX_ATTITUDE}"
+                )
+            }
+            SheetError::FactionRepeated(faction) => {
+                write!(f, "the faction {} is listed twice", faction.name())
+            }
+            SheetError::FollowerWithoutPlayerFaction => {
+                write!(f, "a follower does not carry the Player faction")
+            }
         }
     }
 }
@@ -267,10 +358,13 @@ pub struct Character {
     /// The life before the road. There is no closed list of backgrounds yet,
     /// so this is plain text.
     pub background: String,
-    /// The side this character belongs to. Blank when they belong to none.
-    /// There is no closed list of factions yet.
+    /// The faction this character belongs to first.
+    #[serde(default = "default_primary")]
+    pub primary: FactionId,
+    /// Further factions, not repeating [`Character::primary`]. A follower
+    /// carries the Player faction here unless it is already their primary.
     #[serde(default)]
-    pub faction: String,
+    pub secondary: Vec<FactionId>,
     #[serde(default = "base_level")]
     pub level: u32,
     #[serde(default)]
@@ -289,6 +383,9 @@ fn base_resilience() -> u32 {
 fn base_level() -> u32 {
     BASE_LEVEL
 }
+fn default_primary() -> FactionId {
+    FactionId::Player
+}
 
 impl Character {
     /// A new character at full health, fatigue and resilience, level 1,
@@ -301,9 +398,10 @@ impl Character {
         akstada: Akstada,
         tongues: Vec<Tongue>,
         background: impl Into<String>,
-        faction: impl Into<String>,
+        primary: FactionId,
+        secondary: Vec<FactionId>,
     ) -> Result<Character, SheetError> {
-        let sheet = Character {
+        let mut sheet = Character {
             role,
             age,
             blood,
@@ -314,10 +412,12 @@ impl Character {
             resilience: base_resilience(),
             tongues,
             background: background.into(),
-            faction: faction.into(),
+            primary,
+            secondary,
             level: base_level(),
             inventory: Vec::new(),
         };
+        sheet.adopt_player_faction();
         sheet.check()?;
         Ok(sheet)
     }
@@ -353,16 +453,50 @@ impl Character {
             }
             seen_items.push(item.key.as_str());
         }
+        if let Some(attitude) = self.role.attitude() {
+            if !(MIN_ATTITUDE..=MAX_ATTITUDE).contains(&attitude) {
+                return Err(SheetError::AttitudeOutOfRange(attitude));
+            }
+        }
+        let mut seen = vec![self.primary];
+        for faction in &self.secondary {
+            if seen.contains(faction) {
+                return Err(SheetError::FactionRepeated(*faction));
+            }
+            seen.push(*faction);
+        }
+        if self.role.is_follower() && !self.belongs_to(FactionId::Player) {
+            return Err(SheetError::FollowerWithoutPlayerFaction);
+        }
         Ok(())
     }
 
-    /// The faction, or "none" when the character belongs to no side.
-    pub fn faction_label(&self) -> &str {
-        if self.faction.trim().is_empty() {
-            "none"
-        } else {
-            self.faction.as_str()
+    /// True when the faction is this character's primary or one of their
+    /// secondaries.
+    pub fn belongs_to(&self, faction: FactionId) -> bool {
+        self.primary == faction || self.secondary.contains(&faction)
+    }
+
+    /// Gives a follower the Player faction as a secondary, unless they
+    /// already belong to it.
+    pub fn adopt_player_faction(&mut self) {
+        if self.role.is_follower() && !self.belongs_to(FactionId::Player) {
+            self.secondary.push(FactionId::Player);
         }
+    }
+
+    /// The primary faction's name.
+    pub fn faction_label(&self) -> &str {
+        self.primary.name()
+    }
+
+    /// The secondary factions, in the order they were taken.
+    pub fn secondary_list(&self) -> String {
+        self.secondary
+            .iter()
+            .map(|faction| faction.name())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// The tongues as a single line, in the order they are known.

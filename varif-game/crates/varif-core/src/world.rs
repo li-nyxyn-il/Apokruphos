@@ -2,6 +2,7 @@
 
 use crate::calendar::Date;
 use crate::character::Character;
+use crate::faction::{FactionId, Hostility};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
@@ -194,6 +195,10 @@ pub struct Person {
     /// True for the player and for followers travelling with the party.
     #[serde(default)]
     pub in_party: bool,
+    /// True for someone who can be asked to join the party. When the party
+    /// arrives where they are, an [`crate::Event::RecruitOffered`] asks.
+    #[serde(default)]
+    pub recruitable: bool,
     /// The shared character sheet. A person named only as cast leaves it empty.
     #[serde(default)]
     pub sheet: Option<Character>,
@@ -259,6 +264,11 @@ pub struct World {
     /// this yet: it is the hook for spending a character's fatigue.
     #[serde(default)]
     pub nights_without_camp: u32,
+    /// How hostile each faction is toward each other faction right now.
+    /// A new world starts from [`FactionId::starting_hostility`], and the
+    /// numbers change with the world.
+    #[serde(default)]
+    pub hostility: Hostility,
 }
 
 impl World {
@@ -433,6 +443,16 @@ impl World {
         self.people.iter().filter(|person| person.is_follower())
     }
 
+    /// The people where the party stands who could be recruited into it.
+    pub fn recruit_offers(&self) -> Vec<PersonId> {
+        self.people
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.recruitable && !p.in_party && p.at == self.party_at)
+            .map(|(i, _)| PersonId(i as u32))
+            .collect()
+    }
+
     /// The people at a place who are not in the party.
     pub fn residents(&self, at: PlaceId) -> impl Iterator<Item = &Person> {
         self.people
@@ -448,6 +468,22 @@ impl World {
 
     /// Reads a world written by [`World::to_ron`].
     pub fn from_ron(text: &str) -> Result<World, String> {
-        ron::from_str(text).map_err(|e| e.to_string())
+        let mut world: World = ron::from_str(text).map_err(|e| e.to_string())?;
+        world.grant_follower_factions();
+        Ok(world)
+    }
+
+    /// How hostile `from` is toward `toward` at this moment.
+    pub fn hostility_toward(&self, from: FactionId, toward: FactionId) -> u32 {
+        self.hostility.get(from, toward)
+    }
+
+    /// Gives every follower the Player faction, if they do not already have it.
+    pub fn grant_follower_factions(&mut self) {
+        for person in &mut self.people {
+            if let Some(sheet) = &mut person.sheet {
+                sheet.adopt_player_faction();
+            }
+        }
     }
 }

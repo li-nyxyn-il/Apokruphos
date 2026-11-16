@@ -536,6 +536,48 @@
                 akstada: Pylgrym,
                 tongues: [Shentz, Maphlian],
                 background: "Pylgrym",
+                primary: Player,
+            ),
+        ),
+
+        // ---- Followers ----
+        // Template followers, to try out the party. ASSUMPTION: both sheets.
+        (
+            // Travels with the Pylgrym from the start.
+            key: "donold",
+            name: "Donold Audsen",
+            title: "Follower",
+            at: "yhlgrym",
+            in_party: true,
+            sheet: (
+                role: Npc(follower: true),
+                age: 18,
+                blood: Red,
+                heritage: Aphlian,
+                akstada: Bastion,
+                tongues: [Aphlian],
+                background: "Nivaer",
+                // An Audsen who already follows the player. Attitude stays at its base.
+                primary: Audsen,
+                secondary: [Player],
+            ),
+        ),
+        (
+            // Waits in Yhlgrym and asks to join when the party comes in.
+            key: "jonnoj",
+            name: "Kraiark Jonnoj",
+            title: "Kraiark",
+            at: "yhlgrym",
+            recruitable: true,
+            sheet: (
+                role: Npc(follower: false),
+                age: 51,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Acolyte,
+                tongues: [Shentz, Ecumene],
+                background: "Kraiark of the Krypt of Grymsiere",
+                primary: Ecumenci,
             ),
         ),
     ],

@@ -48,7 +48,7 @@ fn the_data_loads() {
     assert_eq!(world.roads.len(), 54);
     assert_eq!(world.place_name(world.party_at), "Yhlgrym");
     assert_eq!(world.date, Date::new(192, 1, 1).unwrap());
-    assert_eq!(world.party().count(), 1);
+    assert_eq!(world.party().count(), 2, "the Pylgrym and Donold Audsen");
 }
 
 #[test]
@@ -297,13 +297,7 @@ fn a_one_day_walk_does_not_stop_for_the_night() {
     let mut world = first_leg();
     walk(
         &mut world,
-        &[
-            "atzhaim",
-            "heedhaim",
-            "atzch-midili",
-            "bahour-ilos",
-            "sima",
-        ],
+        &["atzhaim", "heedhaim", "atzch-midili", "bahour-ilos", "sima"],
     );
     let hila = world.find_place("hila").unwrap();
     let events = world.apply(Command::Travel { to: hila }).unwrap();

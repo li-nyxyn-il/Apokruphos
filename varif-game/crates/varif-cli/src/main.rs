@@ -5,7 +5,7 @@
 
 use std::io::{self, BufRead, Write};
 use std::{env, fs, process};
-use varif_core::{load_world, Command, Event, Itinerary, Place, PlaceId, World};
+use varif_core::{load_world, Command, Event, Itinerary, PersonId, Place, PlaceId, World};
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
 /// A map with many loops has hundreds of ways between two places. Only this
@@ -19,7 +19,9 @@ Commands:
   go <place>      travel to a place, by key or by name; if no road runs
                   straight there you are offered the ways that lead there
                   and asked before each leg (y/n); on a walk of several
-                  days you are asked each night whether to make camp (y/n)
+                  days you are asked each night whether to make camp (y/n);
+                  when someone where you arrive could join the party, you
+                  are asked whether to recruit them (y/n)
   map             list every place the roads can take the party to
   walk            list the places inside the city the party can walk to
   walk <site>     walk to one of them, by key or by name
@@ -59,7 +61,18 @@ fn main() {
     let mut asking = Asking::Nothing;
     // The stops still to come after the leg the party is walking now.
     let mut heading: Vec<PlaceId> = Vec::new();
+    // Where the party was when the loop last looked, to notice an arrival.
+    let mut seen_at = world.party_at;
     loop {
+        // Just arrived somewhere: first ask about anyone who could join.
+        if world.journey.is_none() && world.party_at != seen_at {
+            seen_at = world.party_at;
+            let offers = world.recruit_offers();
+            if !offers.is_empty() && matches!(asking, Asking::Nothing) {
+                asking = Asking::Recruit(offers);
+            }
+        }
+
         // Arrived at a stop on the way somewhere further: ask about the next leg.
         if world.journey.is_none() && !heading.is_empty() && matches!(asking, Asking::Nothing) {
             asking = Asking::NextStop {
@@ -72,6 +85,10 @@ fn main() {
             // Between days on the road the only question is whether to camp.
             _ if world.journey.is_some() => print!("Make camp for the night? (y/n) "),
             Asking::WhichWay(routes) => print!("Which way? (1-{}, or n to stay) ", routes.len()),
+            Asking::Recruit(offers) => {
+                let name = world.person(offers[0]).map_or("them", |p| p.name.as_str());
+                print!("Recruit {name} into the party? (y/n) ");
+            }
             Asking::NextStop { stops, first_leg } => {
                 let name = world.place_name(stops[0]);
                 if *first_leg {
@@ -110,6 +127,28 @@ fn main() {
 
         match std::mem::replace(&mut asking, Asking::Nothing) {
             Asking::Nothing => {}
+            Asking::Recruit(mut offers) => {
+                match answer.as_str() {
+                    "y" | "yes" => {
+                        run(
+                            &mut world,
+                            Command::Recruit {
+                                person: offers.remove(0),
+                            },
+                        );
+                    }
+                    "n" | "no" => {
+                        let person = offers.remove(0);
+                        let name = world.person(person).map_or("They", |p| p.name.as_str());
+                        println!("{name} stays behind.");
+                    }
+                    _ => println!("Answer y or n."),
+                }
+                if !offers.is_empty() {
+                    asking = Asking::Recruit(offers);
+                }
+                continue;
+            }
             Asking::WhichWay(routes) => {
                 match answer.parse::<usize>() {
                     Ok(n) if (1..=routes.len()).contains(&n) => {
@@ -185,6 +224,8 @@ fn main() {
 /// A question the program is waiting for the player to answer.
 enum Asking {
     Nothing,
+    /// These people could join the party; the first is asked about now.
+    Recruit(Vec<PersonId>),
     /// Several ways lead to the place; the player picks one by number.
     WhichWay(Vec<Itinerary>),
     /// Walk to the first of these stops? The rest follow, one question each.
@@ -343,6 +384,26 @@ fn describe(world: &World, event: &Event) -> String {
         }
         Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
+        Event::RecruitOffered { person, .. } => format!(
+            "{} is here, and could join the party.",
+            person_name(world, *person)
+        ),
+        Event::Recruited { person, .. } => {
+            format!("{} joins the party.", person_name(world, *person))
+        }
+        Event::HostilityChanged {
+            from,
+            toward,
+            index,
+        } => format!(
+            "The {}'s hostility toward {} is now {index}.",
+            from.name(),
+            toward.name()
+        ),
+        Event::AttitudeChanged { person, index } => format!(
+            "{}'s attitude toward the player is now {index}.",
+            person_name(world, *person)
+        ),
         Event::PlaceAdded {
             place,
             from,
@@ -374,6 +435,12 @@ fn sheet(world: &World) {
     println!("{}", person.name);
     println!("  Role: {}", sheet.role.name());
     println!("  Faction: {}", sheet.faction_label());
+    if !sheet.secondary.is_empty() {
+        println!("  Also: {}", sheet.secondary_list());
+    }
+    if let Some(attitude) = sheet.role.attitude() {
+        println!("  Attitude: {attitude}");
+    }
     println!(
         "  {} years, {} blood, {}",
         sheet.age,
@@ -568,4 +635,8 @@ fn site_name(place: Option<&Place>, id: varif_core::SiteId) -> &str {
     place
         .and_then(|p| p.site(id))
         .map_or("an unknown spot", |s| s.name.as_str())
+}
+
+fn person_name(world: &World, id: PersonId) -> &str {
+    world.person(id).map_or("someone", |p| p.name.as_str())
 }

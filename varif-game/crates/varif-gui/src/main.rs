@@ -3,6 +3,9 @@
 //! Run it from the workspace folder with `cargo run -p varif-gui`, or pass a
 //! data file: `cargo run -p varif-gui -- data/first_leg.ron`.
 //!
+//! The window opens on a choice: start a new game, or load a save. A new game
+//! asks for a character before the map is shown.
+//!
 //! egui redraws the whole window many times a second. Each redraw reads the
 //! `World` and draws it; a click produces an `Action`, which is carried out
 //! once drawing is done. The window keeps no copy of the world's state.
@@ -14,7 +17,9 @@ use layout::MapLayout;
 use std::path::Path;
 use std::{env, fs, process};
 use varif_core::{
-    load_world, Command, Event, Itinerary, Place, PlaceId, PlaceKind, Route, SiteId, World,
+    load_world, Akstada, Blood, Command, Event, FactionId, Heritage, Itinerary, PersonId, Place,
+    PlaceId, PlaceKind, Route, SiteId, Tongue, World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL,
+    BASE_RESILIENCE, MAX_AGE, MIN_AGE,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -77,13 +82,83 @@ enum Action {
     Continue,
     /// Stop following the way and stay here.
     Stay,
+    /// Turn down the offer of someone joining the party.
+    Decline(PersonId),
     AddPlace,
     Save,
     Load,
 }
 
+/// Where the window is in the opening of a game.
+enum Stage {
+    /// New game, or load a save.
+    Title { load_open: bool },
+    /// The player is choosing the stats of a new character.
+    Create,
+    /// The map and the road.
+    Play,
+}
+
+/// The editable part of a new player. Health, fatigue, resilience, level
+/// and the inventory stay at their bases.
+struct Creator {
+    name: String,
+    age: u32,
+    blood: Blood,
+    heritage: Heritage,
+    akstada: Akstada,
+    tongues: Vec<Tongue>,
+    background: String,
+    primary: FactionId,
+    secondary: Vec<FactionId>,
+    error: String,
+}
+
+impl Creator {
+    fn from_player(world: &World) -> Creator {
+        let Some(person) = world.player() else {
+            return Creator::empty();
+        };
+        let Some(sheet) = person.sheet.as_ref() else {
+            return Creator {
+                name: person.name.clone(),
+                ..Creator::empty()
+            };
+        };
+        Creator {
+            name: person.name.clone(),
+            age: sheet.age.clamp(MIN_AGE, MAX_AGE),
+            blood: sheet.blood,
+            heritage: sheet.heritage,
+            akstada: sheet.akstada,
+            tongues: sheet.tongues.clone(),
+            background: sheet.background.clone(),
+            primary: sheet.primary,
+            secondary: sheet.secondary.clone(),
+            error: String::new(),
+        }
+    }
+
+    fn empty() -> Creator {
+        Creator {
+            name: String::new(),
+            age: 20,
+            blood: Blood::Red,
+            heritage: Heritage::Shentzi,
+            akstada: Akstada::Pylgrym,
+            tongues: vec![Tongue::Shentz],
+            background: String::new(),
+            primary: FactionId::Player,
+            secondary: Vec::new(),
+            error: String::new(),
+        }
+    }
+}
+
 /// Everything the window remembers that is not part of the world.
 struct App {
+    stage: Stage,
+    creator: Creator,
     world: World,
     layout: MapLayout,
     /// The event log shown in the middle of the window.
@@ -93,6 +168,9 @@ struct App {
     ways: Option<(PlaceId, Vec<Itinerary>, usize)>,
     /// The stops still to come after the leg the party is walking now.
     heading: Vec<PlaceId>,
+    /// People offered to the party on arrival whom the player has not yet
+    /// answered about. The first is asked about.
+    offers: Vec<PersonId>,
     /// The journal entry being typed.
     draft: String,
     /// The name and distance of the place being added.
@@ -108,11 +186,14 @@ impl App {
         let mut log = vec!["The Pylgrymage begins.".to_string()];
         log.extend(note);
         App {
+            stage: Stage::Title { load_open: false },
+            creator: Creator::from_player(&world),
             world,
             layout,
             log,
             ways: None,
             heading: Vec::new(),
+            offers: Vec::new(),
             draft: String::new(),
             new_place: String::new(),
             new_leagues: 3,
@@ -128,6 +209,9 @@ impl App {
             Ok(events) => {
                 for event in &events {
                     self.log.push(describe(&self.world, event));
+                    if let Event::RecruitOffered { person, .. } = event {
+                        self.offers.push(*person);
+                    }
                 }
                 true
             }
@@ -146,6 +230,10 @@ impl App {
                 if matches!(command, Command::Travel { .. }) {
                     self.heading.clear();
                     self.ways = None;
+                    self.offers.clear();
+                }
+                if let Command::Recruit { person } = command {
+                    self.offers.retain(|&p| p != person);
                 }
                 if self.send(command) && was_journal {
                     self.draft.clear();
@@ -169,6 +257,14 @@ impl App {
                 let stops = std::mem::take(&mut self.heading);
                 self.set_out(stops);
             }
+            Action::Decline(person) => {
+                self.offers.retain(|&p| p != person);
+                let name = self
+                    .world
+                    .person(person)
+                    .map_or("They", |p| p.name.as_str());
+                self.log.push(format!("{name} stays behind."));
+            }
             Action::Stay => {
                 self.heading.clear();
                 self.log.push(format!(
@@ -186,13 +282,16 @@ impl App {
                 }
             }
             Action::Save => self.save(),
-            Action::Load => self.load(),
+            Action::Load => {
+                self.load();
+            }
         }
     }
 
     fn go_to(&mut self, to: PlaceId) {
         let here = self.world.party_at;
         self.ways = None;
+        self.offers.clear();
         if to == here || self.world.road_between(here, to).is_some() {
             self.heading.clear();
             self.send(Command::Travel { to });
@@ -215,6 +314,8 @@ impl App {
     /// Walks the first leg of a way and remembers the stops still to come.
     fn set_out(&mut self, stops: Vec<PlaceId>) {
         self.heading.clear();
+        // An offer not answered before leaving is left behind.
+        self.offers.clear();
         if let Some((&first, rest)) = stops.split_first() {
             if self.send(Command::Travel { to: first }) {
                 self.heading = rest.to_vec();
@@ -233,25 +334,237 @@ impl App {
         };
     }
 
-    fn load(&mut self) {
+    /// Reads a save into the window. True when the file loaded.
+    fn load(&mut self) -> bool {
         let result = fs::read_to_string(&self.save_path)
             .map_err(|e| e.to_string())
             .and_then(|text| World::from_ron(&text));
-        self.status = match result {
+        match result {
             Ok(world) => {
                 self.world = world;
                 self.ways = None;
                 self.heading.clear();
+                self.offers.clear();
                 self.log.push(format!("Loaded {}.", self.save_path));
-                format!("Loaded {}.", self.save_path)
+                self.status = format!("Loaded {}.", self.save_path);
+                true
             }
-            Err(error) => format!("Could not load: {error}"),
-        };
+            Err(error) => {
+                self.status = format!("Could not load: {error}");
+                false
+            }
+        }
     }
+
+    /// Writes the creator onto the player. Stays on the creation screen when
+    /// the sheet is not valid, and leaves the world untouched in that case.
+    fn begin(&mut self) {
+        let name = self.creator.name.trim().to_string();
+        if name.is_empty() {
+            self.creator.error = "The character needs a name.".to_string();
+            return;
+        }
+        let Some(index) = self
+            .world
+            .people
+            .iter()
+            .position(|person| person.is_player())
+        else {
+            self.creator.error = "This world has no player.".to_string();
+            return;
+        };
+        let Some(mut sheet) = self.world.people[index].sheet.clone() else {
+            self.creator.error = "This world has no player.".to_string();
+            return;
+        };
+        sheet.age = self.creator.age;
+        sheet.blood = self.creator.blood;
+        sheet.heritage = self.creator.heritage;
+        sheet.akstada = self.creator.akstada;
+        sheet.tongues = self.creator.tongues.clone();
+        sheet.background = self.creator.background.trim().to_string();
+        sheet.primary = self.creator.primary;
+        sheet.secondary = self.creator.secondary.clone();
+        if let Err(error) = sheet.check() {
+            self.creator.error = error.to_string();
+            return;
+        }
+        self.world.people[index].name = name.clone();
+        self.world.people[index].sheet = Some(sheet);
+        self.creator.error.clear();
+        self.status.clear();
+        self.log = vec![format!("{name} sets out on the Pylgrymage.")];
+        self.stage = Stage::Play;
+    }
+
+    fn title_screen(&mut self, ui: &mut egui::Ui) {
+        let load_open = matches!(self.stage, Stage::Title { load_open: true });
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(120.0);
+                ui.heading("Varif");
+                ui.label("The Pylgrymage");
+                ui.add_space(28.0);
+                if ui
+                    .add_sized([220.0, 32.0], egui::Button::new("New game"))
+                    .clicked()
+                {
+                    self.creator = Creator::from_player(&self.world);
+                    self.status.clear();
+                    self.stage = Stage::Create;
+                }
+                ui.add_space(8.0);
+                if ui
+                    .add_sized([220.0, 32.0], egui::Button::new("Load game"))
+                    .clicked()
+                {
+                    self.status.clear();
+                    self.stage = Stage::Title {
+                        load_open: !load_open,
+                    };
+                }
+                if load_open {
+                    ui.add_space(12.0);
+                    ui.add(egui::TextEdit::singleline(&mut self.save_path).desired_width(220.0));
+                    ui.add_space(8.0);
+                    if ui
+                        .add_sized([220.0, 32.0], egui::Button::new("Load"))
+                        .clicked()
+                        && self.load()
+                    {
+                        self.stage = Stage::Play;
+                    }
+                }
+                if !self.status.is_empty() {
+                    ui.add_space(12.0);
+                    ui.colored_label(ui.visuals().error_fg_color, &self.status);
+                }
+            });
+        });
+    }
+
+    fn create_screen(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("create_bar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Back").clicked() {
+                    self.creator.error.clear();
+                    self.stage = Stage::Title { load_open: false };
+                }
+                if ui.button("Begin").clicked() {
+                    self.begin();
+                }
+                if !self.creator.error.is_empty() {
+                    ui.colored_label(ui.visuals().error_fg_color, &self.creator.error);
+                }
+            });
+        });
+
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.heading("New character");
+            ui.weak(format!(
+                "Health {BASE_HEALTH}, fatigue {BASE_FATIGUE}, resilience {BASE_RESILIENCE}. Level {BASE_LEVEL}. These stay as they are, and the inventory starts empty."
+            ));
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical().id_salt("create").show(ui, |ui| {
+                ui.set_max_width(460.0);
+                ui.label("Name");
+                ui.add(egui::TextEdit::singleline(&mut self.creator.name).desired_width(280.0));
+                ui.add_space(8.0);
+                ui.label("Age");
+                ui.add(egui::Slider::new(&mut self.creator.age, MIN_AGE..=MAX_AGE).text("years"));
+                ui.add_space(8.0);
+                choice(ui, "blood", "Blood", self.creator.blood.name(), |ui| {
+                    for blood in Blood::ALL {
+                        ui.selectable_value(&mut self.creator.blood, blood, blood.name());
+                    }
+                });
+                choice(ui, "heritage", "Heritage", self.creator.heritage.name(), |ui| {
+                    for heritage in Heritage::ALL {
+                        ui.selectable_value(&mut self.creator.heritage, heritage, heritage.name());
+                    }
+                });
+                choice(ui, "akstada", "Akstada", self.creator.akstada.name(), |ui| {
+                    for sign in Akstada::ALL {
+                        ui.selectable_value(&mut self.creator.akstada, sign, sign.name());
+                    }
+                });
+                ui.add_space(8.0);
+                ui.label("Tongues");
+                for tongue in Tongue::ALL {
+                    let mut on = self.creator.tongues.contains(&tongue);
+                    if ui.checkbox(&mut on, tongue.name()).changed() {
+                        if on {
+                            self.creator.tongues.push(tongue);
+                        } else {
+                            self.creator.tongues.retain(|known| *known != tongue);
+                        }
+                    }
+                }
+                ui.add_space(8.0);
+                ui.label("Background");
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.creator.background)
+                        .desired_rows(3)
+                        .desired_width(360.0),
+                );
+                choice(ui, "primary_faction", "Primary faction", self.creator.primary.name(), |ui| {
+                    for faction in FactionId::ALL {
+                        ui.selectable_value(&mut self.creator.primary, faction, faction.name());
+                    }
+                });
+                self.creator.secondary.retain(|faction| *faction != self.creator.primary);
+                ui.add_space(8.0);
+                ui.label("Secondary factions");
+                for faction in FactionId::ALL {
+                    if faction == self.creator.primary {
+                        continue;
+                    }
+                    let mut on = self.creator.secondary.contains(&faction);
+                    let label = if faction.joinable() {
+                        faction.name().to_string()
+                    } else {
+                        format!("{} (not open)", faction.name())
+                    };
+                    if ui.checkbox(&mut on, label).changed() {
+                        if on {
+                            self.creator.secondary.push(faction);
+                        } else {
+                            self.creator.secondary.retain(|held| *held != faction);
+                        }
+                    }
+                }
+            });
+        });
+    }
+}
+
+fn choice(
+    ui: &mut egui::Ui,
+    salt: &str,
+    label: &str,
+    selected: &str,
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    ui.add_space(8.0);
+    ui.label(label);
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(selected)
+        .width(220.0)
+        .show_ui(ui, body);
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        match self.stage {
+            Stage::Title { .. } => self.title_screen(ui),
+            Stage::Create => self.create_screen(ui),
+            Stage::Play => self.play_screen(ui),
+        }
+    }
+}
+
+impl App {
+    fn play_screen(&mut self, ui: &mut egui::Ui) {
         let mut action: Option<Action> = None;
         // Between days on the road the world accepts only the answer to
         // "make camp?", so everything else is greyed out.
@@ -317,7 +630,14 @@ impl eframe::App for App {
                 map(ui, &self.world, &self.layout, height, &mut action);
             });
             // Below the map, so that the map does not move when a question appears.
-            question(ui, &self.world, &self.ways, &self.heading, &mut action);
+            question(
+                ui,
+                &self.world,
+                &self.offers,
+                &self.ways,
+                &self.heading,
+                &mut action,
+            );
             ui.separator();
             ui.heading("Events");
             egui::ScrollArea::vertical()
@@ -338,10 +658,12 @@ impl eframe::App for App {
 }
 
 /// Whatever the window is waiting for the player to decide, shown under the
-/// map: whether to camp, which way to take, or whether to walk the next leg.
+/// map: whether to camp, whether to recruit someone, which way to take, or
+/// whether to walk the next leg.
 fn question(
     ui: &mut egui::Ui,
     world: &World,
+    offers: &[PersonId],
     ways: &Option<(PlaceId, Vec<Itinerary>, usize)>,
     heading: &[PlaceId],
     action: &mut Option<Action>,
@@ -360,6 +682,19 @@ fn question(
                 }
                 if ui.button("Press on").clicked() {
                     *action = Some(Action::Send(Command::EndDay { camp: false }));
+                }
+            });
+        });
+    } else if let Some(&person) = offers.first() {
+        ui.group(|ui| {
+            let name = world.person(person).map_or("Someone", |p| p.name.as_str());
+            ui.strong(format!("{name} could join the party. Recruit them?"));
+            ui.horizontal(|ui| {
+                if ui.button("Recruit").clicked() {
+                    *action = Some(Action::Send(Command::Recruit { person }));
+                }
+                if ui.button("Not now").clicked() {
+                    *action = Some(Action::Decline(person));
                 }
             });
         });
@@ -512,6 +847,12 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         };
         ui.weak(format!("Role: {}{follower}", sheet.role.name()));
         ui.weak(format!("Faction: {}", sheet.faction_label()));
+        if !sheet.secondary.is_empty() {
+            ui.weak(format!("Also: {}", sheet.secondary_list()));
+        }
+        if let Some(attitude) = sheet.role.attitude() {
+            ui.weak(format!("Attitude: {attitude}"));
+        }
         ui.weak(format!(
             "{} years, {} blood, {}",
             sheet.age,
@@ -781,6 +1122,26 @@ fn describe(world: &World, event: &Event) -> String {
         }
         Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
+        Event::RecruitOffered { person, .. } => format!(
+            "{} is here, and could join the party.",
+            person_name(world, *person)
+        ),
+        Event::Recruited { person, .. } => {
+            format!("{} joins the party.", person_name(world, *person))
+        }
+        Event::HostilityChanged {
+            from,
+            toward,
+            index,
+        } => format!(
+            "The {}'s hostility toward {} is now {index}.",
+            from.name(),
+            toward.name()
+        ),
+        Event::AttitudeChanged { person, index } => format!(
+            "{}'s attitude toward the player is now {index}.",
+            person_name(world, *person)
+        ),
         Event::PlaceAdded {
             place,
             from,
@@ -793,6 +1154,10 @@ fn describe(world: &World, event: &Event) -> String {
             world.place_name(*from)
         ),
     }
+}
+
+fn person_name(world: &World, id: PersonId) -> &str {
+    world.person(id).map_or("someone", |p| p.name.as_str())
 }
 
 fn site_name(place: Option<&Place>, id: SiteId) -> &str {

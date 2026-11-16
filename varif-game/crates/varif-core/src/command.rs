@@ -1,7 +1,9 @@
 //! Commands go in, events come out. The rules of the world live here.
 
 use crate::calendar::Date;
-use crate::ids::{PlaceId, SiteId};
+use crate::character::{Role, MAX_ATTITUDE, MIN_ATTITUDE};
+use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
+use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -31,6 +33,20 @@ pub enum Command {
     /// Put a new place on the map, joined by a new road to where the party
     /// stands. It takes the region of the place the party is at.
     AddPlace { name: String, leagues: u32 },
+    /// Take someone into the party as a follower. They must be recruitable
+    /// and where the party stands. Turning an offer down needs no command.
+    Recruit { person: PersonId },
+    /// Set one faction's hostility toward another. 100 is least hostile and 0
+    /// is most hostile. A faction's index toward itself stays at 100. Any
+    /// other index must lie from [`MIN_HOSTILITY`] to [`MAX_HOSTILITY`].
+    SetHostility {
+        from: FactionId,
+        toward: FactionId,
+        index: u32,
+    },
+    /// Set an NPC's attitude toward the player, from [`MIN_ATTITUDE`] to
+    /// [`MAX_ATTITUDE`]. The player has no attitude.
+    SetAttitude { person: PersonId, index: u32 },
 }
 
 /// Something that happened in the world as the result of a command.
@@ -101,6 +117,30 @@ pub enum Event {
         leagues: u32,
         on: Date,
     },
+    /// Someone where the party has just arrived could join it. The front end
+    /// asks the player, and answers yes with [`Command::Recruit`].
+    RecruitOffered {
+        person: PersonId,
+        at: PlaceId,
+        on: Date,
+    },
+    /// Someone joined the party as a follower.
+    Recruited {
+        person: PersonId,
+        at: PlaceId,
+        on: Date,
+    },
+    /// One faction's hostility toward another changed.
+    HostilityChanged {
+        from: FactionId,
+        toward: FactionId,
+        index: u32,
+    },
+    /// An NPC's attitude toward the player changed.
+    AttitudeChanged {
+        person: PersonId,
+        index: u32,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -123,6 +163,18 @@ pub enum CommandError {
     /// The place has nowhere inside it to walk to.
     NowhereToWalk,
     UnknownSite(SiteId),
+    UnknownPerson(PersonId),
+    AlreadyInParty,
+    /// The person is somewhere other than where the party stands.
+    NotHere,
+    /// The person will not join the party.
+    NotRecruitable,
+    /// A hostility or attitude index was outside 0 to 100.
+    IndexOutOfRange,
+    /// A faction's hostility toward itself stays at 100, the least hostile.
+    HostilityTowardItself,
+    /// The person is not an NPC, so they have no attitude.
+    NoAttitude,
 }
 
 impl fmt::Display for CommandError {
@@ -145,9 +197,23 @@ impl fmt::Display for CommandError {
             CommandError::NotOnTheRoad => write!(f, "the party is not on the road"),
             CommandError::NowhereToWalk => write!(f, "there is nowhere to walk to here"),
             CommandError::UnknownSite(id) => write!(f, "there is no site with id {} here", id.0),
+            CommandError::UnknownPerson(id) => write!(f, "there is no person with id {}", id.0),
+            CommandError::AlreadyInParty => write!(f, "they are already in the party"),
+            CommandError::NotHere => write!(f, "they are not here"),
+            CommandError::NotRecruitable => write!(f, "they will not join the party"),
             CommandError::NoDistance => {
                 write!(f, "the road to a new place must be at least 1 league")
             }
+            CommandError::IndexOutOfRange => {
+                write!(
+                    f,
+                    "the index must lie from {MIN_HOSTILITY} to {MAX_HOSTILITY}"
+                )
+            }
+            CommandError::HostilityTowardItself => {
+                write!(f, "a faction's hostility toward itself stays at {MAX_HOSTILITY}")
+            }
+            CommandError::NoAttitude => write!(f, "they have no attitude toward the player"),
         }
     }
 }
@@ -160,7 +226,12 @@ impl World {
     /// Every command is checked in full before anything changes, so an `Err`
     /// always leaves the world exactly as it was.
     pub fn apply(&mut self, command: Command) -> Result<Vec<Event>, CommandError> {
-        if self.journey.is_some() && !matches!(command, Command::EndDay { .. }) {
+        if self.journey.is_some()
+            && !matches!(
+                command,
+                Command::EndDay { .. } | Command::SetHostility { .. } | Command::SetAttitude { .. }
+            )
+        {
             return Err(CommandError::OnTheRoad);
         }
         match command {
@@ -170,7 +241,89 @@ impl World {
             Command::MakeCamp => Ok(self.make_camp()),
             Command::WriteJournal { text } => self.write_journal(text),
             Command::AddPlace { name, leagues } => self.add_place(name, leagues),
+            Command::Recruit { person } => self.recruit(person),
+            Command::SetHostility {
+                from,
+                toward,
+                index,
+            } => self.set_hostility(from, toward, index),
+            Command::SetAttitude { person, index } => self.set_attitude(person, index),
         }
+    }
+
+    fn set_hostility(
+        &mut self,
+        from: FactionId,
+        toward: FactionId,
+        index: u32,
+    ) -> Result<Vec<Event>, CommandError> {
+        if from == toward {
+            return Err(CommandError::HostilityTowardItself);
+        }
+        if !(MIN_HOSTILITY..=MAX_HOSTILITY).contains(&index) {
+            return Err(CommandError::IndexOutOfRange);
+        }
+        self.hostility.set(from, toward, index);
+        Ok(vec![Event::HostilityChanged {
+            from,
+            toward,
+            index,
+        }])
+    }
+
+    fn set_attitude(&mut self, id: PersonId, index: u32) -> Result<Vec<Event>, CommandError> {
+        if !(MIN_ATTITUDE..=MAX_ATTITUDE).contains(&index) {
+            return Err(CommandError::IndexOutOfRange);
+        }
+        let person = self.person(id).ok_or(CommandError::UnknownPerson(id))?;
+        let Some(follower) = person.sheet.as_ref().and_then(|sheet| match sheet.role {
+            Role::Npc { follower, .. } => Some(follower),
+            Role::Player => None,
+        }) else {
+            return Err(CommandError::NoAttitude);
+        };
+        let sheet = self.people[id.index()]
+            .sheet
+            .as_mut()
+            .expect("checked above");
+        sheet.role = Role::Npc {
+            follower,
+            attitude: index,
+        };
+        Ok(vec![Event::AttitudeChanged { person: id, index }])
+    }
+
+    fn recruit(&mut self, id: PersonId) -> Result<Vec<Event>, CommandError> {
+        let at = self.party_at;
+        let person = self.person(id).ok_or(CommandError::UnknownPerson(id))?;
+        if person.in_party {
+            return Err(CommandError::AlreadyInParty);
+        }
+        if person.at != at {
+            return Err(CommandError::NotHere);
+        }
+        if !person.recruitable {
+            return Err(CommandError::NotRecruitable);
+        }
+        let person = &mut self.people[id.index()];
+        person.in_party = true;
+        person.recruitable = false;
+        if let Some(sheet) = &mut person.sheet {
+            let attitude = sheet
+                .role
+                .attitude()
+                .unwrap_or(crate::character::BASE_ATTITUDE);
+            sheet.role = Role::Npc {
+                follower: true,
+                attitude,
+            };
+            sheet.adopt_player_faction();
+        }
+        Ok(vec![Event::Recruited {
+            person: id,
+            at,
+            on: self.date,
+        }])
     }
 
     fn travel(&mut self, to: PlaceId) -> Result<Vec<Event>, CommandError> {
@@ -269,6 +422,13 @@ impl World {
             events.push(Event::EnteredBy {
                 at: to,
                 gate,
+                on: self.date,
+            });
+        }
+        for person in self.recruit_offers() {
+            events.push(Event::RecruitOffered {
+                person,
+                at: to,
                 on: self.date,
             });
         }

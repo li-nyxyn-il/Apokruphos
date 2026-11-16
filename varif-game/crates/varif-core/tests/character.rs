@@ -58,8 +58,9 @@ fn the_pylgrym_starts_from_the_base() {
 
     let sheet = player.sheet.as_ref().unwrap();
     assert_eq!(sheet.role, Role::Player);
-    assert!(sheet.faction.is_empty());
-    assert_eq!(sheet.faction_label(), "none");
+    assert_eq!(sheet.primary, varif_core::FactionId::Player);
+    assert!(sheet.secondary.is_empty());
+    assert_eq!(sheet.faction_label(), "Player");
     assert_eq!(sheet.age, 20);
     assert_eq!(sheet.blood, Blood::Red);
     assert_eq!(sheet.heritage, Heritage::Shentzi);
@@ -229,7 +230,7 @@ fn an_npc_keeps_follower_status_and_a_faction() {
                     akstada: Fox,
                     tongues: [Aphlian, Ecumene],
                     background: "Prelate",
-                    faction: "Ecumenci",
+                    primary: Ecumenci,
                 )),
             ),
         ],
@@ -242,9 +243,10 @@ fn an_npc_keeps_follower_status_and_a_faction() {
         .collect();
     assert_eq!(followers, ["guide"]);
     let guide = world.followers().next().unwrap().sheet.as_ref().unwrap();
-    assert_eq!(guide.role, Role::Npc { follower: true });
+    assert_eq!(guide.role.attitude(), Some(varif_core::BASE_ATTITUDE));
     assert!(guide.role.is_follower());
-    assert_eq!(guide.faction, "Ecumenci");
+    assert_eq!(guide.primary, varif_core::FactionId::Ecumenci);
+    assert_eq!(guide.secondary, vec![varif_core::FactionId::Player]);
     assert_eq!(guide.faction_label(), "Ecumenci");
 }
 
@@ -289,4 +291,18 @@ fn two_players_are_refused() {
         ],
     )"#;
     assert_eq!(load_world(text).unwrap_err(), DataError::TwoPlayers);
+}
+
+#[test]
+fn the_choices_a_new_character_is_offered() {
+    assert_eq!(Blood::ALL.len(), 3);
+    assert_eq!(Heritage::ALL.len(), 9);
+    assert_eq!(Akstada::ALL.len(), 21);
+    assert_eq!(Tongue::ALL.len(), 10);
+    for blood in Blood::ALL {
+        assert!(!blood.name().is_empty());
+    }
+    for sign in Akstada::ALL {
+        assert!(sign.name().starts_with("the "));
+    }
 }

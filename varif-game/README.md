@@ -12,7 +12,7 @@ cargo gui      # open the window
 cargo run      # walk the road at the command line
 ```
 
-In the window, click a place on the map or a road button to travel, a site to walk to it, and answer the question under the map when one appears. The first `cargo gui` takes a few minutes while the window library compiles.
+The window opens by asking for a new game or a saved one. A new game is a character: name, age, blood, heritage, akstada, tongues, background and faction. Health, fatigue, resilience and level stay at their base, and the inventory starts empty. After that, click a place on the map or a road button to travel, a site to walk to it, and answer the question under the map when one appears. The first `cargo gui` takes a few minutes while the window library compiles.
 
 At the command line, type `help` for the list of commands.
 
@@ -34,7 +34,8 @@ Inside `varif-core/src`:
 | `command.rs` | `Command`, `Event` and the rules in `World::apply` |
 | `data.rs` | Loading a world from a data file |
 | `calendar.rs` | `Date`, with eight months and five weekdays |
-| `character.rs` | The shared sheet: role, faction, blood, heritage, akstada, tongues, vitals, inventory |
+| `character.rs` | The shared sheet: role, factions, attitude, blood, heritage, akstada, tongues, vitals, inventory |
+| `faction.rs` | Ecumenci, Bandit, the Audsen Line and Player, with hostility and who the player can join |
 | `rng.rs` | The seeded random number generator |
 | `ids.rs` | `PlaceId` and `PersonId` |
 
@@ -54,7 +55,8 @@ These are marked `ASSUMPTION` in the code and data:
 - **Distances and encounter chances:** every road in `data/first_leg.ron`.
 - **Start date:** 1 Jhuze 192 zdy.
 - **The cast:** one stand-in person, "The Pylgrym".
-- **The player's sheet:** the player, no faction, age 20, red blood, Shentzi, born under the Pylgrym, speaking Shentz and Maphlian. Health, fatigue and resilience are 100, level is 1, and the inventory is empty. All of that is in `data/first_leg.ron`.
+- **The player's sheet:** the player, primary faction Player, age 20, red blood, Shentzi, born under the Pylgrym, speaking Shentz and Maphlian. Health, fatigue and resilience are 100, level is 1, and the inventory is empty. All of that is in `data/first_leg.ron`.
+- **Starting hostility:** 100 is least hostile and 0 is most hostile. Each faction starts at 100 toward itself. The other numbers a new world copies into its own table are in `faction.rs`. Ecumenci starts at 50 toward the player and the Audsen Line and 0 toward bandits. The Audsen Line starts at 70 toward the player, 50 toward the Ecumenci and 0 toward bandits. Bandits start at 0 toward the other three. The player starts at 50 toward the other three. An NPC's attitude starts at 50. Both can change, and a save keeps the change. A faction's index toward itself stays at 100.
 
 ## Adding to it
 
