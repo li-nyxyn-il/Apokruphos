@@ -30,7 +30,10 @@ Commands:
   addplace <leagues> <name>
                   put a new place on the map, a road of that many leagues
                   from where the party stands
-  camp            make camp and pass the night
+  camp            make camp; spends one food, one water, and one wood
+                  when the party carries them
+  rest            sleep in camp and pass the night
+  pack            pack up the camp
   sleep           sleep one night at an inn or a residence
   write <text>    add a journal entry
   journal         read the journal
@@ -201,6 +204,12 @@ fn main() {
             "addplace" => add_place(&mut world, rest),
             "camp" => {
                 run(&mut world, Command::MakeCamp);
+            }
+            "rest" => {
+                run(&mut world, Command::Rest);
+            }
+            "pack" => {
+                run(&mut world, Command::PackUp);
             }
             "sleep" => {
                 run(&mut world, Command::Sleep);
@@ -401,7 +410,25 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
+        Event::Camped {
+            at,
+            spent_food,
+            spent_water,
+            spent_wood,
+            ..
+        } => format!(
+            "The party makes camp at {}.{}",
+            world.place_name(*at),
+            camp_note(*spent_food, *spent_water, *spent_wood)
+        ),
+        Event::Rested { at, fatigue, .. } => format!(
+            "The party sleeps in camp at {}.{}",
+            world.place_name(*at),
+            fatigue_note(world, fatigue)
+        ),
+        Event::PackedUp { at, .. } => {
+            format!("The party packs up the camp at {}.", world.place_name(*at))
+        }
         Event::Slept {
             at, site, fatigue, ..
         } => format!(
@@ -666,6 +693,33 @@ fn site_name(place: Option<&Place>, id: varif_core::SiteId) -> &str {
 
 fn person_name(world: &World, id: PersonId) -> &str {
     world.person(id).map_or("someone", |p| p.name.as_str())
+}
+
+fn camp_note(spent_food: bool, spent_water: bool, spent_wood: bool) -> String {
+    let mut note = String::new();
+    let mut used = Vec::new();
+    if spent_food {
+        used.push("food");
+    }
+    if spent_water {
+        used.push("water");
+    }
+    if spent_wood {
+        used.push("wood");
+    }
+    if !used.is_empty() {
+        note.push_str(&format!(" Uses {}.", used.join(", ")));
+    }
+    if !spent_food {
+        note.push_str(" No food: 5 fatigue.");
+    }
+    if !spent_water {
+        note.push_str(" No water: 5 health.");
+    }
+    if !spent_wood {
+        note.push_str(" No wood for a fire: 5 resilience.");
+    }
+    note
 }
 
 fn fatigue_note(world: &World, fatigue: &[MemberFatigue]) -> String {

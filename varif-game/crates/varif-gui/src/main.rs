@@ -884,7 +884,13 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         if ui.button("Make camp").clicked() {
             *action = Some(Action::Send(Command::MakeCamp));
         }
-        if at_a_bed(world) && ui.button("Sleep").clicked() {
+        if ui.button("Sleep").clicked() {
+            *action = Some(Action::Send(Command::Rest));
+        }
+        if ui.button("Pack up").clicked() {
+            *action = Some(Action::Send(Command::PackUp));
+        }
+        if at_a_bed(world) && ui.button("Sleep at the inn").clicked() {
             *action = Some(Action::Send(Command::Sleep));
         }
         if world.camped {
@@ -1136,7 +1142,25 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
+        Event::Camped {
+            at,
+            spent_food,
+            spent_water,
+            spent_wood,
+            ..
+        } => format!(
+            "The party makes camp at {}.{}",
+            world.place_name(*at),
+            camp_note(*spent_food, *spent_water, *spent_wood)
+        ),
+        Event::Rested { at, fatigue, .. } => format!(
+            "The party sleeps in camp at {}.{}",
+            world.place_name(*at),
+            fatigue_note(world, fatigue)
+        ),
+        Event::PackedUp { at, .. } => {
+            format!("The party packs up the camp at {}.", world.place_name(*at))
+        }
         Event::Slept {
             at, site, fatigue, ..
         } => format!(
@@ -1182,6 +1206,33 @@ fn describe(world: &World, event: &Event) -> String {
 
 fn person_name(world: &World, id: PersonId) -> &str {
     world.person(id).map_or("someone", |p| p.name.as_str())
+}
+
+fn camp_note(spent_food: bool, spent_water: bool, spent_wood: bool) -> String {
+    let mut note = String::new();
+    let mut used = Vec::new();
+    if spent_food {
+        used.push("food");
+    }
+    if spent_water {
+        used.push("water");
+    }
+    if spent_wood {
+        used.push("wood");
+    }
+    if !used.is_empty() {
+        note.push_str(&format!(" Uses {}.", used.join(", ")));
+    }
+    if !spent_food {
+        note.push_str(" No food: 5 fatigue.");
+    }
+    if !spent_water {
+        note.push_str(" No water: 5 health.");
+    }
+    if !spent_wood {
+        note.push_str(" No wood for a fire: 5 resilience.");
+    }
+    note
 }
 
 fn fatigue_note(world: &World, fatigue: &[MemberFatigue]) -> String {

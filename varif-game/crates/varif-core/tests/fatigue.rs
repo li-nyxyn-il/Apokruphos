@@ -215,7 +215,7 @@ fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
     assert_eq!(fatigue(&world, "pylgrym"), (50, false));
     assert_eq!(fatigue(&world, "donold"), (55, false));
     assert_eq!(world.nights_without_camp, 0);
-    assert!(world.camped);
+    assert!(!world.camped);
     assert_eq!(world.date, start.next_day());
 
     // The second night adds 15: 50 becomes 65, 55 becomes 70.
