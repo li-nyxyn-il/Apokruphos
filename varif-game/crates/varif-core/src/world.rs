@@ -276,6 +276,8 @@ pub struct World {
     /// `None` while on the road or in a place with nowhere to walk to.
     #[serde(default)]
     pub party_site: Option<SiteId>,
+    /// True while a camp is pitched. Making camp does not pass the night, and
+    /// the party must pack the camp up before it can travel.
     pub camped: bool,
     pub journal: Vec<JournalEntry>,
     /// The walk in progress, if the party is between places. While it is
