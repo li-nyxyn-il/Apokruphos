@@ -45,7 +45,7 @@ The window starts by asking for a new game or a saved one. The first build of th
 - **Change goes through commands.** A front end calls `world.apply(command)` and gets back events, or an error that leaves the world unchanged.
 - **Deterministic.** The seeded random number generator lives inside the world, so the same seed and the same commands always produce the same history.
 
-Placeholder values such as month length, travel speed, distances and the starting cast are marked `ASSUMPTION` in the code and data. The [game README](varif-game/README.md#placeholders-to-replace) lists them.
+A month is 50 days, so a year is 400 days. Other placeholder values, such as travel speed, distances and the starting cast, are marked `ASSUMPTION` in the code and data. The [game README](varif-game/README.md#placeholders-to-replace) lists them.
 
 ## Browsing the lore
 

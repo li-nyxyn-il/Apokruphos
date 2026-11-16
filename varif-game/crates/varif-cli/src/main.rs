@@ -5,7 +5,9 @@
 
 use std::io::{self, BufRead, Write};
 use std::{env, fs, process};
-use varif_core::{load_world, Command, Event, Itinerary, PersonId, Place, PlaceId, World};
+use varif_core::{
+    load_world, Command, Event, Itinerary, MemberFatigue, PersonId, Place, PlaceId, World,
+};
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
 /// A map with many loops has hundreds of ways between two places. Only this
@@ -28,7 +30,11 @@ Commands:
   addplace <leagues> <name>
                   put a new place on the map, a road of that many leagues
                   from where the party stands
-  camp            make camp and pass the night
+  camp            make camp; spends one food, one water, and one wood
+                  when the party carries them
+  rest            sleep in camp and pass the night
+  pack            pack up the camp
+  sleep           sleep one night at an inn or a residence
   write <text>    add a journal entry
   journal         read the journal
   save <file>     write the whole world to a file
@@ -199,6 +205,15 @@ fn main() {
             "camp" => {
                 run(&mut world, Command::MakeCamp);
             }
+            "rest" => {
+                run(&mut world, Command::Rest);
+            }
+            "pack" => {
+                run(&mut world, Command::PackUp);
+            }
+            "sleep" => {
+                run(&mut world, Command::Sleep);
+            }
             "write" => {
                 run(
                     &mut world,
@@ -359,14 +374,27 @@ fn describe(world: &World, event: &Event) -> String {
             if *days_left == 1 { "" } else { "s" },
             world.place_name(*to)
         ),
-        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
+        Event::CampedOnRoad { fatigue, .. } => {
+            format!(
+                "The party makes camp beside the road.{}",
+                fatigue_note(world, fatigue)
+            )
+        }
         Event::PressedOn {
             nights_without_camp,
+            extra_leagues,
+            fatigue,
             ..
-        } => match nights_without_camp {
-            1 => "The party presses on through the night.".to_string(),
-            n => format!("The party presses on through the night, {n} nights without camp."),
-        },
+        } => {
+            let night = match nights_without_camp {
+                1 => "The party presses on through the night".to_string(),
+                n => format!("The party presses on through the night, {n} nights without camp"),
+            };
+            format!(
+                "{night}, covering {extra_leagues} extra leagues.{}",
+                fatigue_note(world, fatigue)
+            )
+        }
         Event::Arrived { at, .. } => format!("The party arrives at {}.", world.place_name(*at)),
         Event::EnteredBy { at, gate, .. } => {
             format!("It comes in by the {}.", site_name(world.place(*at), *gate))
@@ -382,7 +410,33 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
+        Event::Camped {
+            at,
+            spent_food,
+            spent_water,
+            spent_wood,
+            ..
+        } => format!(
+            "The party makes camp at {}.{}",
+            world.place_name(*at),
+            camp_note(*spent_food, *spent_water, *spent_wood)
+        ),
+        Event::Rested { at, fatigue, .. } => format!(
+            "The party sleeps in camp at {}.{}",
+            world.place_name(*at),
+            fatigue_note(world, fatigue)
+        ),
+        Event::PackedUp { at, .. } => {
+            format!("The party packs up the camp at {}.", world.place_name(*at))
+        }
+        Event::Slept {
+            at, site, fatigue, ..
+        } => format!(
+            "The party sleeps at the {} in {}.{}",
+            site_name(world.place(*at), *site),
+            world.place_name(*at),
+            fatigue_note(world, fatigue)
+        ),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
         Event::RecruitOffered { person, .. } => format!(
             "{} is here, and could join the party.",
@@ -639,4 +693,43 @@ fn site_name(place: Option<&Place>, id: varif_core::SiteId) -> &str {
 
 fn person_name(world: &World, id: PersonId) -> &str {
     world.person(id).map_or("someone", |p| p.name.as_str())
+}
+
+fn camp_note(spent_food: bool, spent_water: bool, spent_wood: bool) -> String {
+    let mut note = String::new();
+    let mut used = Vec::new();
+    if spent_food {
+        used.push("food");
+    }
+    if spent_water {
+        used.push("water");
+    }
+    if spent_wood {
+        used.push("wood");
+    }
+    if !used.is_empty() {
+        note.push_str(&format!(" Uses {}.", used.join(", ")));
+    }
+    if !spent_food {
+        note.push_str(" No food: 5 fatigue.");
+    }
+    if !spent_water {
+        note.push_str(" No water: 5 health.");
+    }
+    if !spent_wood {
+        note.push_str(" No wood for a fire: 5 resilience.");
+    }
+    note
+}
+
+fn fatigue_note(world: &World, fatigue: &[MemberFatigue]) -> String {
+    if fatigue.is_empty() {
+        return String::new();
+    }
+    let parts = fatigue
+        .iter()
+        .map(|entry| format!("{} {}", person_name(world, entry.person), entry.fatigue))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" Fatigue: {parts}.")
 }

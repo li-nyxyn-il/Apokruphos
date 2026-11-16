@@ -1,8 +1,6 @@
 //! The calendar: eight months and five weekdays.
 //!
-//! ASSUMPTION: the notes give the month and weekday names but not the length
-//! of a month. Forty-five days (nine five-day weeks) gives a 360-day year.
-//! Change `DAYS_PER_MONTH` when the real figure is decided.
+//! A month is fifty days (ten five-day weeks). Eight months make a 400-day year.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

@@ -20,10 +20,10 @@ pub mod world;
 pub use calendar::Date;
 pub use character::{
     Akstada, Blood, Character, Heritage, Item, Role, SheetError, Tongue, BASE_ATTITUDE,
-    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_ATTITUDE, MIN_AGE,
-    MIN_ATTITUDE,
+    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, FOOD, MAX_AGE, MAX_ATTITUDE, MIN_AGE,
+    MIN_ATTITUDE, WATER, WOOD,
 };
-pub use command::{Command, CommandError, Event};
+pub use command::{Command, CommandError, Event, MemberFatigue};
 pub use data::{load_world, DataError};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};

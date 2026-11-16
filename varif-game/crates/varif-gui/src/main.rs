@@ -17,9 +17,9 @@ use layout::MapLayout;
 use std::path::Path;
 use std::{env, fs, process};
 use varif_core::{
-    load_world, Akstada, Blood, Command, Event, FactionId, Heritage, Itinerary, PersonId, Place,
-    PlaceId, PlaceKind, Route, SiteId, Tongue, World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL,
-    BASE_RESILIENCE, MAX_AGE, MIN_AGE,
+    load_world, Akstada, Blood, Command, Event, FactionId, Heritage, Itinerary, MemberFatigue,
+    PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World, BASE_FATIGUE,
+    BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -670,7 +670,7 @@ fn question(
 ) {
     if let Some(journey) = world.journey {
         ui.group(|ui| {
-            let left = journey.days - journey.days_walked;
+            let left = journey.days_left();
             ui.strong(format!(
                 "Night falls on the road, {} from {}.",
                 days(left),
@@ -884,6 +884,15 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         if ui.button("Make camp").clicked() {
             *action = Some(Action::Send(Command::MakeCamp));
         }
+        if ui.button("Sleep").clicked() {
+            *action = Some(Action::Send(Command::Rest));
+        }
+        if ui.button("Pack up").clicked() {
+            *action = Some(Action::Send(Command::PackUp));
+        }
+        if at_a_bed(world) && ui.button("Sleep at the inn").clicked() {
+            *action = Some(Action::Send(Command::Sleep));
+        }
         if world.camped {
             ui.label("Camped.");
         }
@@ -1056,7 +1065,7 @@ fn map(
             on_screen[journey.from.index()],
             on_screen[journey.to.index()],
         );
-        let part = journey.days_walked as f32 / journey.days.max(1) as f32;
+        let part = journey.leagues_walked as f32 / journey.leagues.max(1) as f32;
         let party = from + (to - from) * part;
         painter.circle_filled(party, 5.0, here_colour);
         painter.circle_stroke(party, 9.0, egui::Stroke::new(2.0, here_colour));
@@ -1097,14 +1106,27 @@ fn describe(world: &World, event: &Event) -> String {
             days(*days_left),
             world.place_name(*to)
         ),
-        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
+        Event::CampedOnRoad { fatigue, .. } => {
+            format!(
+                "The party makes camp beside the road.{}",
+                fatigue_note(world, fatigue)
+            )
+        }
         Event::PressedOn {
             nights_without_camp,
+            extra_leagues,
+            fatigue,
             ..
-        } => match nights_without_camp {
-            1 => "The party presses on through the night.".to_string(),
-            n => format!("The party presses on through the night, {n} nights without camp."),
-        },
+        } => {
+            let night = match nights_without_camp {
+                1 => "The party presses on through the night".to_string(),
+                n => format!("The party presses on through the night, {n} nights without camp"),
+            };
+            format!(
+                "{night}, covering {extra_leagues} extra leagues.{}",
+                fatigue_note(world, fatigue)
+            )
+        }
         Event::Arrived { at, .. } => format!("The party arrives at {}.", world.place_name(*at)),
         Event::EnteredBy { at, gate, .. } => {
             format!("It comes in by the {}.", site_name(world.place(*at), *gate))
@@ -1120,7 +1142,33 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped { at, .. } => format!("The party makes camp at {}.", world.place_name(*at)),
+        Event::Camped {
+            at,
+            spent_food,
+            spent_water,
+            spent_wood,
+            ..
+        } => format!(
+            "The party makes camp at {}.{}",
+            world.place_name(*at),
+            camp_note(*spent_food, *spent_water, *spent_wood)
+        ),
+        Event::Rested { at, fatigue, .. } => format!(
+            "The party sleeps in camp at {}.{}",
+            world.place_name(*at),
+            fatigue_note(world, fatigue)
+        ),
+        Event::PackedUp { at, .. } => {
+            format!("The party packs up the camp at {}.", world.place_name(*at))
+        }
+        Event::Slept {
+            at, site, fatigue, ..
+        } => format!(
+            "The party sleeps at the {} in {}.{}",
+            site_name(world.place(*at), *site),
+            world.place_name(*at),
+            fatigue_note(world, fatigue)
+        ),
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
         Event::RecruitOffered { person, .. } => format!(
             "{} is here, and could join the party.",
@@ -1158,6 +1206,56 @@ fn describe(world: &World, event: &Event) -> String {
 
 fn person_name(world: &World, id: PersonId) -> &str {
     world.person(id).map_or("someone", |p| p.name.as_str())
+}
+
+fn camp_note(spent_food: bool, spent_water: bool, spent_wood: bool) -> String {
+    let mut note = String::new();
+    let mut used = Vec::new();
+    if spent_food {
+        used.push("food");
+    }
+    if spent_water {
+        used.push("water");
+    }
+    if spent_wood {
+        used.push("wood");
+    }
+    if !used.is_empty() {
+        note.push_str(&format!(" Uses {}.", used.join(", ")));
+    }
+    if !spent_food {
+        note.push_str(" No food: 5 fatigue.");
+    }
+    if !spent_water {
+        note.push_str(" No water: 5 health.");
+    }
+    if !spent_wood {
+        note.push_str(" No wood for a fire: 5 resilience.");
+    }
+    note
+}
+
+fn fatigue_note(world: &World, fatigue: &[MemberFatigue]) -> String {
+    if fatigue.is_empty() {
+        return String::new();
+    }
+    let parts = fatigue
+        .iter()
+        .map(|entry| format!("{} {}", person_name(world, entry.person), entry.fatigue))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" Fatigue: {parts}.")
+}
+
+/// True when the party is standing at an inn or a residence.
+fn at_a_bed(world: &World) -> bool {
+    let Some(place) = world.place(world.party_at) else {
+        return false;
+    };
+    let Some(site) = world.party_site.and_then(|id| place.site(id)) else {
+        return false;
+    };
+    matches!(site.kind, SiteKind::Inn | SiteKind::Residence)
 }
 
 fn site_name(place: Option<&Place>, id: SiteId) -> &str {
