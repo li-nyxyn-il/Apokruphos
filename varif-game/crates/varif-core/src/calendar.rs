@@ -13,7 +13,7 @@ pub const MONTHS: [&str; 8] = [
 
 pub const WEEKDAYS: [&str; 5] = ["Arden", "Bhurden", "Fiurden", "Dereden", "Seldyn"];
 
-pub const DAYS_PER_MONTH: u32 = 45;
+pub const DAYS_PER_MONTH: u32 = 50;
 pub const DAYS_PER_YEAR: u32 = DAYS_PER_MONTH * MONTHS.len() as u32;
 
 /// A day in the zdy reckoning.
