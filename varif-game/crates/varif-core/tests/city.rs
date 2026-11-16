@@ -14,7 +14,8 @@ fn travel(world: &mut World, stops: &[&str]) {
         let to = world.find_place(stop).unwrap();
         world.apply(Command::Travel { to }).unwrap();
         while world.journey.is_some() {
-            world.apply(Command::EndDay { camp: true }).unwrap();
+            world.apply(Command::MakeCamp).unwrap();
+            world.apply(Command::Rest).unwrap();
         }
     }
 }

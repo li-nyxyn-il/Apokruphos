@@ -21,7 +21,8 @@ Commands:
   go <place>      travel to a place, by key or by name; if no road runs
                   straight there you are offered the ways that lead there
                   and asked before each leg (y/n); on a walk of several
-                  days you are asked each night whether to make camp (y/n);
+                  days you are asked each night whether to make camp (y/n),
+                  then whether to sleep (y/n);
                   when someone where you arrive could join the party, you
                   are asked whether to recruit them (y/n)
   map             list every place the roads can take the party to
@@ -30,11 +31,10 @@ Commands:
   addplace <leagues> <name>
                   put a new place on the map, a road of that many leagues
                   from where the party stands
-  camp            make camp; spends one food, one water, and one wood
-                  when the party carries them
-  rest            sleep in camp and pass the night
+  camp            pitch camp; this does not pass the night
+  rest            sleep in camp; spends one food, one water and one wood
   pack            pack up the camp
-  sleep           sleep one night at an inn or a residence
+  sleep           sleep at an inn for 5 copper, or at a residence for free
   write <text>    add a journal entry
   journal         read the journal
   save <file>     write the whole world to a file
@@ -88,7 +88,8 @@ fn main() {
         }
 
         match &asking {
-            // Between days on the road the only question is whether to camp.
+            // Between days on the road the question is camp, or sleep once camped.
+            _ if world.journey.is_some() && world.camped => print!("Sleep in camp? (y/n) "),
             _ if world.journey.is_some() => print!("Make camp for the night? (y/n) "),
             Asking::WhichWay(routes) => print!("Which way? (1-{}, or n to stay) ", routes.len()),
             Asking::Recruit(offers) => {
@@ -119,14 +120,26 @@ fn main() {
         }
 
         if world.journey.is_some() {
-            match answer.as_str() {
-                "y" | "yes" => {
-                    run(&mut world, Command::EndDay { camp: true });
+            if world.camped {
+                match answer.as_str() {
+                    "y" | "yes" => {
+                        run(&mut world, Command::Rest);
+                    }
+                    "n" | "no" => {
+                        run(&mut world, Command::PackUp);
+                    }
+                    _ => println!("Answer y to sleep or n to pack up."),
                 }
-                "n" | "no" => {
-                    run(&mut world, Command::EndDay { camp: false });
+            } else {
+                match answer.as_str() {
+                    "y" | "yes" => {
+                        run(&mut world, Command::MakeCamp);
+                    }
+                    "n" | "no" => {
+                        run(&mut world, Command::EndDay { camp: false });
+                    }
+                    _ => println!("Answer y to make camp or n to press on."),
                 }
-                _ => println!("Answer y to make camp or n to press on."),
             }
             continue;
         }
@@ -374,12 +387,7 @@ fn describe(world: &World, event: &Event) -> String {
             if *days_left == 1 { "" } else { "s" },
             world.place_name(*to)
         ),
-        Event::CampedOnRoad { fatigue, .. } => {
-            format!(
-                "The party makes camp beside the road.{}",
-                fatigue_note(world, fatigue)
-            )
-        }
+        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
         Event::PressedOn {
             nights_without_camp,
             extra_leagues,
@@ -410,33 +418,45 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped {
+        Event::Camped { at, .. } => {
+            format!("The party makes camp at {}.", world.place_name(*at))
+        }
+        Event::Rested {
             at,
+            fatigue,
             spent_food,
             spent_water,
             spent_wood,
             ..
         } => format!(
-            "The party makes camp at {}.{}",
+            "The party sleeps in camp at {}.{}{}",
             world.place_name(*at),
-            camp_note(*spent_food, *spent_water, *spent_wood)
-        ),
-        Event::Rested { at, fatigue, .. } => format!(
-            "The party sleeps in camp at {}.{}",
-            world.place_name(*at),
+            camp_note(*spent_food, *spent_water, *spent_wood),
             fatigue_note(world, fatigue)
         ),
         Event::PackedUp { at, .. } => {
             format!("The party packs up the camp at {}.", world.place_name(*at))
         }
         Event::Slept {
-            at, site, fatigue, ..
-        } => format!(
-            "The party sleeps at the {} in {}.{}",
-            site_name(world.place(*at), *site),
-            world.place_name(*at),
-            fatigue_note(world, fatigue)
-        ),
+            at,
+            site,
+            fatigue,
+            copper,
+            ..
+        } => {
+            let paid = if *copper > 0 {
+                format!(" Pays {copper} copper.")
+            } else {
+                String::new()
+            };
+            format!(
+                "The party sleeps at the {} in {}.{}{}",
+                site_name(world.place(*at), *site),
+                world.place_name(*at),
+                paid,
+                fatigue_note(world, fatigue)
+            )
+        }
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
         Event::RecruitOffered { person, .. } => format!(
             "{} is here, and could join the party.",

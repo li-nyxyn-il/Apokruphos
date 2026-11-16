@@ -273,21 +273,103 @@ impl Role {
     }
 }
 
-/// Rations. Making camp spends one when the party carries any.
-pub const FOOD: &str = "food";
-/// Drinking water. Making camp spends one when the party carries any.
-pub const WATER: &str = "water";
-/// Firewood. Making camp spends one when the party carries any.
-pub const WOOD: &str = "wood";
+/// Weight of one food, water, wood or copper. Nothing reads this yet.
+pub const SUPPLY_WEIGHT: u32 = 1;
+/// What one food, water, wood or copper is worth, in copper. Nothing reads this yet.
+pub const SUPPLY_VALUE: u32 = 1;
+/// How much use one food, water, wood or copper has left. Nothing reads this yet.
+pub const SUPPLY_DURABILITY: u32 = 1;
 
-/// One stack of a thing the character carries. The `key` is the identity:
-/// two stacks with the same key are the same thing.
+fn supply_stat() -> u32 {
+    SUPPLY_WEIGHT
+}
+
+/// What a stack is. Food, water, wood and copper are the supplies. Anything
+/// else is goods, kept only so a pack can hold it, until equipment exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ItemType {
+    Food,
+    Water,
+    Wood,
+    Copper,
+    Goods,
+}
+
+impl ItemType {
+    pub fn label(self) -> &'static str {
+        match self {
+            ItemType::Food => "Food",
+            ItemType::Water => "Water",
+            ItemType::Wood => "Wood",
+            ItemType::Copper => "Copper",
+            ItemType::Goods => "Goods",
+        }
+    }
+
+    /// True for the four supplies. Goods are not spent by camp or an inn.
+    pub fn is_supply(self) -> bool {
+        match self {
+            ItemType::Food | ItemType::Water | ItemType::Wood | ItemType::Copper => true,
+            ItemType::Goods => false,
+        }
+    }
+}
+
+/// One stack in an inventory.
+///
+/// `count` is how many are carried, and it is the only field a rule spends.
+/// Weight, value and durability are stored for later. Two supplies of the
+/// same [`ItemType`] are one stack. Two goods are one stack when the name matches.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
-    pub key: String,
     pub name: String,
-    /// How many are carried. A stack of one is a single thing.
+    #[serde(rename = "type")]
+    pub item_type: ItemType,
+    /// How heavy one of the stack is.
+    #[serde(default = "supply_stat")]
+    pub weight: u32,
+    /// What one of the stack is worth, in copper.
+    #[serde(default = "supply_stat")]
+    pub value: u32,
+    /// How many are carried. Spending takes from this.
     pub count: u32,
+    /// How much use one of the stack has left.
+    #[serde(default = "supply_stat")]
+    pub durability: u32,
+}
+
+impl Item {
+    /// A supply stack with the placeholder weight, value and durability.
+    pub fn supply(item_type: ItemType, count: u32) -> Item {
+        Item {
+            name: item_type.label().to_string(),
+            item_type,
+            weight: SUPPLY_WEIGHT,
+            value: SUPPLY_VALUE,
+            count,
+            durability: SUPPLY_DURABILITY,
+        }
+    }
+
+    /// Something that is not a supply. The name is its identity.
+    pub fn goods(name: impl Into<String>, count: u32) -> Item {
+        Item {
+            name: name.into(),
+            item_type: ItemType::Goods,
+            weight: SUPPLY_WEIGHT,
+            value: SUPPLY_VALUE,
+            count,
+            durability: SUPPLY_DURABILITY,
+        }
+    }
+
+    /// Supplies stack by type. Goods stack by name.
+    fn stacks_with(&self, other: &Item) -> bool {
+        match self.item_type {
+            ItemType::Goods => other.item_type == ItemType::Goods && other.name == self.name,
+            kind => other.item_type == kind,
+        }
+    }
 }
 
 /// What is wrong with a character sheet.
@@ -316,7 +398,7 @@ impl fmt::Display for SheetError {
                 write!(f, "the tongue {} is listed twice", tongue.name())
             }
             SheetError::BlankBackground => write!(f, "the background is blank"),
-            SheetError::BlankItem => write!(f, "an item has no key or no name"),
+            SheetError::BlankItem => write!(f, "an item has no name"),
             SheetError::EmptyStack(name) => write!(f, "none of \"{name}\" are carried"),
             SheetError::DuplicateItem(key) => write!(f, "\"{key}\" is carried twice"),
             SheetError::AttitudeOutOfRange(attitude) => {
@@ -454,18 +536,18 @@ impl Character {
         if self.background.trim().is_empty() {
             return Err(SheetError::BlankBackground);
         }
-        let mut seen_items: Vec<&str> = Vec::new();
+        let mut seen_items: Vec<&Item> = Vec::new();
         for item in &self.inventory {
-            if item.key.trim().is_empty() || item.name.trim().is_empty() {
+            if item.name.trim().is_empty() {
                 return Err(SheetError::BlankItem);
             }
             if item.count == 0 {
                 return Err(SheetError::EmptyStack(item.name.clone()));
             }
-            if seen_items.contains(&item.key.as_str()) {
-                return Err(SheetError::DuplicateItem(item.key.clone()));
+            if seen_items.iter().any(|held| held.stacks_with(item)) {
+                return Err(SheetError::DuplicateItem(item.name.clone()));
             }
-            seen_items.push(item.key.as_str());
+            seen_items.push(item);
         }
         if let Some(attitude) = self.role.attitude() {
             if !(MIN_ATTITUDE..=MAX_ATTITUDE).contains(&attitude) {
@@ -522,42 +604,62 @@ impl Character {
             .join(", ")
     }
 
-    /// Adds `item` to the inventory. A stack already held under the same key
-    /// grows by `count`. A count of zero adds nothing.
+    /// Adds `item` to the inventory. A stack of the same supply, or goods of
+    /// the same name, grows by `count`. A count of zero adds nothing.
+    /// Weight, value and durability stay as the stack already stored them.
     pub fn carry(&mut self, item: Item) {
         if item.count == 0 {
             return;
         }
-        if let Some(stack) = self.inventory.iter_mut().find(|held| held.key == item.key) {
+        if let Some(stack) = self
+            .inventory
+            .iter_mut()
+            .find(|held| held.stacks_with(&item))
+        {
             stack.count = stack.count.saturating_add(item.count);
         } else {
             self.inventory.push(item);
         }
     }
 
-    /// Removes one of `key`. False when none are carried. A stack that
-    /// reaches zero is dropped, so the sheet is not left holding nothing.
-    pub fn take_one(&mut self, key: &str) -> bool {
-        let Some(pos) = self
-            .inventory
-            .iter()
-            .position(|item| item.key == key && item.count > 0)
-        else {
-            return false;
-        };
-        if self.inventory[pos].count == 1 {
-            self.inventory.remove(pos);
-        } else {
-            self.inventory[pos].count -= 1;
+    /// Removes up to `count` of `item_type`. Returns how many were removed.
+    /// A stack that reaches zero is dropped.
+    pub fn take(&mut self, item_type: ItemType, mut count: u32) -> u32 {
+        let mut taken = 0;
+        while count > 0 {
+            let Some(pos) = self
+                .inventory
+                .iter()
+                .position(|item| item.item_type == item_type && item.count > 0)
+            else {
+                break;
+            };
+            let have = self.inventory[pos].count;
+            let n = have.min(count);
+            if n == have {
+                self.inventory.remove(pos);
+            } else {
+                self.inventory[pos].count -= n;
+            }
+            taken += n;
+            count -= n;
         }
-        true
+        taken
     }
 
-    /// How many of `key` are carried. Zero when the character has none.
-    pub fn holding(&self, key: &str) -> u32 {
+    /// How many of `item_type` are carried, across every matching stack.
+    pub fn holding(&self, item_type: ItemType) -> u32 {
         self.inventory
             .iter()
-            .find(|item| item.key == key)
+            .filter(|item| item.item_type == item_type)
+            .fold(0, |sum, item| sum.saturating_add(item.count))
+    }
+
+    /// How many goods of this name are carried. Supplies are not goods.
+    pub fn holding_goods(&self, name: &str) -> u32 {
+        self.inventory
+            .iter()
+            .find(|item| item.item_type == ItemType::Goods && item.name == name)
             .map_or(0, |item| item.count)
     }
 }

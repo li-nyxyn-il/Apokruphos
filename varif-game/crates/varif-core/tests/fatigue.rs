@@ -1,7 +1,7 @@
 //! Fatigue: pressing on, camping on the road, and a night at an inn.
 
 use varif_core::{
-    load_world, Command, CommandError, Event, MemberFatigue, PersonId, SiteKind, World,
+    load_world, Command, CommandError, Event, ItemType, MemberFatigue, PersonId, SiteKind, World,
 };
 
 const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
@@ -38,6 +38,21 @@ fn fatigue(world: &World, key: &str) -> (u32, bool) {
         .and_then(|candidate| candidate.sheet.as_ref())
         .unwrap_or_else(|| panic!("{key} should have a sheet"));
     (sheet.fatigue, sheet.road_rest_debt)
+}
+
+/// Pitch camp, then sleep. On the road the sleep is the camped march.
+fn camp_the_night(world: &mut World) -> Vec<Event> {
+    let mut events = world.apply(Command::MakeCamp).unwrap();
+    events.extend(world.apply(Command::Rest).unwrap());
+    events
+}
+
+fn copper(world: &World) -> u32 {
+    world
+        .party()
+        .filter_map(|person| person.sheet.as_ref())
+        .map(|sheet| sheet.holding(ItemType::Copper))
+        .sum()
 }
 
 fn on_the_canyon(world: &mut World) {
@@ -127,20 +142,20 @@ fn road_camping_restores_five_and_holds_the_ceiling() {
     on_the_canyon(&mut world);
 
     // Already at the cap: +5 does not pass 100.
-    let events = world.apply(Command::EndDay { camp: true }).unwrap();
+    let events = camp_the_night(&mut world);
     assert!(matches!(
-        events.first(),
-        Some(Event::CampedOnRoad { fatigue, .. }) if fatigue == &levels(100, 100)
+        events.iter().find(|event| matches!(event, Event::Rested { .. })),
+        Some(Event::Rested { fatigue, .. }) if fatigue == &levels(100, 100)
     ));
     assert_eq!(fatigue_pair(&world), (100, 100));
 
     // Above 50, with no debt, a camp may pass 50. At 47 after a drop below 50, it stops at 50.
     set_fatigue(&mut world, "pylgrym", 60, false);
     set_fatigue(&mut world, "donold", 47, true);
-    let events = world.apply(Command::EndDay { camp: true }).unwrap();
+    let events = camp_the_night(&mut world);
     assert!(matches!(
-        events.first(),
-        Some(Event::CampedOnRoad { fatigue, .. }) if fatigue == &levels(65, 50)
+        events.iter().find(|event| matches!(event, Event::Rested { .. })),
+        Some(Event::Rested { fatigue, .. }) if fatigue == &levels(65, 50)
     ));
     assert_eq!(fatigue(&world, "pylgrym"), (65, false));
     assert_eq!(fatigue(&world, "donold"), (50, true));
@@ -148,13 +163,13 @@ fn road_camping_restores_five_and_holds_the_ceiling() {
     // 30 becomes 35. 98 stops at 100. The debt is not cleared by the road.
     set_fatigue(&mut world, "pylgrym", 98, false);
     set_fatigue(&mut world, "donold", 30, true);
-    world.apply(Command::EndDay { camp: true }).unwrap();
+    camp_the_night(&mut world);
     assert_eq!(fatigue(&world, "pylgrym"), (100, false));
     assert_eq!(fatigue(&world, "donold"), (35, true));
 
     // 47 without that debt is not held at 50.
     set_fatigue(&mut world, "pylgrym", 47, false);
-    world.apply(Command::EndDay { camp: true }).unwrap();
+    camp_the_night(&mut world);
     assert_eq!(fatigue(&world, "pylgrym"), (52, false));
 }
 
@@ -168,7 +183,7 @@ fn camping_clears_the_press_streak() {
     assert_eq!(press(&events).1, 6);
     assert_eq!(fatigue_pair(&world), (90, 90));
 
-    world.apply(Command::EndDay { camp: true }).unwrap();
+    camp_the_night(&mut world);
     assert_eq!(world.nights_without_camp, 0);
     assert_eq!(fatigue_pair(&world), (95, 95));
 
@@ -206,11 +221,13 @@ fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
     world.nights_without_camp = 4;
     let start = world.date;
 
+    assert_eq!(copper(&world), 10);
     let events = world.apply(Command::Sleep).unwrap();
     assert!(matches!(
         events.first(),
-        Some(Event::Slept { fatigue, .. }) if fatigue == &levels(50, 55)
+        Some(Event::Slept { fatigue, copper: 5, .. }) if fatigue == &levels(50, 55)
     ));
+    assert_eq!(copper(&world), 5);
     assert!(matches!(events.last(), Some(Event::DayPassed { .. })));
     assert_eq!(fatigue(&world, "pylgrym"), (50, false));
     assert_eq!(fatigue(&world, "donold"), (55, false));
@@ -218,14 +235,20 @@ fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
     assert!(!world.camped);
     assert_eq!(world.date, start.next_day());
 
-    // The second night adds 15: 50 becomes 65, 55 becomes 70.
+    // The second night adds 15: 50 becomes 65, 55 becomes 70. It spends the rest.
     world.apply(Command::Sleep).unwrap();
     assert_eq!(fatigue(&world, "pylgrym"), (65, false));
     assert_eq!(fatigue(&world, "donold"), (70, false));
+    assert_eq!(copper(&world), 0);
+
+    // No copper: the night is refused and the world stays as it was.
+    let before = world.clone();
+    assert_eq!(world.apply(Command::Sleep), Err(CommandError::CannotAfford));
+    assert_eq!(world, before);
 
     // The ceiling is gone, so a later camp on the road may pass 50.
     on_the_canyon(&mut world);
-    world.apply(Command::EndDay { camp: true }).unwrap();
+    camp_the_night(&mut world);
     assert_eq!(fatigue(&world, "pylgrym"), (70, false));
     assert_eq!(fatigue(&world, "donold"), (75, false));
 }
@@ -247,11 +270,13 @@ fn a_residence_sleeps_by_the_same_rule() {
     set_fatigue(&mut world, "pylgrym", 30, true);
     set_fatigue(&mut world, "donold", 40, true);
     let start = world.date;
+    assert_eq!(copper(&world), 10);
 
     world.apply(Command::Sleep).unwrap();
     assert_eq!(fatigue(&world, "pylgrym"), (50, false));
     assert_eq!(fatigue(&world, "donold"), (55, false));
     assert_eq!(world.date, start.next_day());
+    assert_eq!(copper(&world), 10, "a residence does not cost copper");
 }
 
 #[test]

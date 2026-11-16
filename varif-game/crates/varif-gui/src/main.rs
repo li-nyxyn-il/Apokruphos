@@ -670,20 +670,32 @@ fn question(
 ) {
     if let Some(journey) = world.journey {
         ui.group(|ui| {
-            let left = journey.days_left();
-            ui.strong(format!(
-                "Night falls on the road, {} from {}.",
-                days(left),
-                world.place_name(journey.to)
-            ));
-            ui.horizontal(|ui| {
-                if ui.button("Make camp").clicked() {
-                    *action = Some(Action::Send(Command::EndDay { camp: true }));
-                }
-                if ui.button("Press on").clicked() {
-                    *action = Some(Action::Send(Command::EndDay { camp: false }));
-                }
-            });
+            if world.camped {
+                ui.strong("The party is camped beside the road.");
+                ui.horizontal(|ui| {
+                    if ui.button("Sleep").clicked() {
+                        *action = Some(Action::Send(Command::Rest));
+                    }
+                    if ui.button("Pack up").clicked() {
+                        *action = Some(Action::Send(Command::PackUp));
+                    }
+                });
+            } else {
+                let left = journey.days_left();
+                ui.strong(format!(
+                    "Night falls on the road, {} from {}.",
+                    days(left),
+                    world.place_name(journey.to)
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button("Make camp").clicked() {
+                        *action = Some(Action::Send(Command::MakeCamp));
+                    }
+                    if ui.button("Press on").clicked() {
+                        *action = Some(Action::Send(Command::EndDay { camp: false }));
+                    }
+                });
+            }
         });
     } else if let Some(&person) = offers.first() {
         ui.group(|ui| {
@@ -1106,12 +1118,7 @@ fn describe(world: &World, event: &Event) -> String {
             days(*days_left),
             world.place_name(*to)
         ),
-        Event::CampedOnRoad { fatigue, .. } => {
-            format!(
-                "The party makes camp beside the road.{}",
-                fatigue_note(world, fatigue)
-            )
-        }
+        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
         Event::PressedOn {
             nights_without_camp,
             extra_leagues,
@@ -1142,33 +1149,45 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped {
+        Event::Camped { at, .. } => {
+            format!("The party makes camp at {}.", world.place_name(*at))
+        }
+        Event::Rested {
             at,
+            fatigue,
             spent_food,
             spent_water,
             spent_wood,
             ..
         } => format!(
-            "The party makes camp at {}.{}",
+            "The party sleeps in camp at {}.{}{}",
             world.place_name(*at),
-            camp_note(*spent_food, *spent_water, *spent_wood)
-        ),
-        Event::Rested { at, fatigue, .. } => format!(
-            "The party sleeps in camp at {}.{}",
-            world.place_name(*at),
+            camp_note(*spent_food, *spent_water, *spent_wood),
             fatigue_note(world, fatigue)
         ),
         Event::PackedUp { at, .. } => {
             format!("The party packs up the camp at {}.", world.place_name(*at))
         }
         Event::Slept {
-            at, site, fatigue, ..
-        } => format!(
-            "The party sleeps at the {} in {}.{}",
-            site_name(world.place(*at), *site),
-            world.place_name(*at),
-            fatigue_note(world, fatigue)
-        ),
+            at,
+            site,
+            fatigue,
+            copper,
+            ..
+        } => {
+            let paid = if *copper > 0 {
+                format!(" Pays {copper} copper.")
+            } else {
+                String::new()
+            };
+            format!(
+                "The party sleeps at the {} in {}.{}{}",
+                site_name(world.place(*at), *site),
+                world.place_name(*at),
+                paid,
+                fatigue_note(world, fatigue)
+            )
+        }
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
         Event::RecruitOffered { person, .. } => format!(
             "{} is here, and could join the party.",
