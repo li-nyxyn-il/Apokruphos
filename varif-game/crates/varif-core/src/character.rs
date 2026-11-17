@@ -466,6 +466,8 @@ impl fmt::Display for SheetError {
 ///
 /// Health, fatigue, resilience and level start at the `BASE_` values. A data
 /// file may set them to something else; omitting them keeps the base.
+/// Vitality, willpower and fortitude are not stored. Each is the integer
+/// floor of the square root of the product of two of those body stats.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Character {
     /// Player, or an NPC who may also be a follower.
@@ -525,6 +527,14 @@ fn base_level() -> u32 {
 }
 fn default_primary() -> FactionId {
     FactionId::Player
+}
+
+/// Integer floor of `sqrt(x * y)`. The product is widened so two large
+/// stats cannot overflow a `u32`.
+fn floor_sqrt_product(x: u32, y: u32) -> u32 {
+    let product = u64::from(x) * u64::from(y);
+    // `sqrt(u32::MAX * u32::MAX)` is `u32::MAX`, so the root fits.
+    product.isqrt() as u32
 }
 
 impl Character {
@@ -610,6 +620,27 @@ impl Character {
             return Err(SheetError::FollowerWithoutPlayerFaction);
         }
         Ok(())
+    }
+
+    /// Vitality, from health and fatigue: `floor(sqrt(health * fatigue))`.
+    ///
+    /// Health 100 and fatigue 100 is 100. Computed from the sheet, not stored.
+    pub fn vitality(&self) -> u32 {
+        floor_sqrt_product(self.health, self.fatigue)
+    }
+
+    /// Willpower, from fatigue and resilience: `floor(sqrt(fatigue * resilience))`.
+    ///
+    /// Fatigue 50 and resilience 110 is 74. Computed from the sheet, not stored.
+    pub fn willpower(&self) -> u32 {
+        floor_sqrt_product(self.fatigue, self.resilience)
+    }
+
+    /// Fortitude, from resilience and health: `floor(sqrt(resilience * health))`.
+    ///
+    /// Computed from the sheet, not stored.
+    pub fn fortitude(&self) -> u32 {
+        floor_sqrt_product(self.resilience, self.health)
     }
 
     /// True when the faction is this character's primary or one of their

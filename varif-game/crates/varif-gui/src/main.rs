@@ -879,6 +879,12 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
             "Health {}    Fatigue {}    Resilience {}",
             sheet.health, sheet.fatigue, sheet.resilience
         ));
+        ui.label(format!(
+            "Vitality {}    Willpower {}    Fortitude {}",
+            sheet.vitality(),
+            sheet.willpower(),
+            sheet.fortitude()
+        ));
         if sheet.inventory.is_empty() {
             ui.weak("Carrying nothing.");
         } else {

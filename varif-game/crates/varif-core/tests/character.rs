@@ -72,6 +72,9 @@ fn the_pylgrym_starts_from_the_base() {
     assert_eq!(sheet.health, BASE_HEALTH);
     assert_eq!(sheet.fatigue, BASE_FATIGUE);
     assert_eq!(sheet.resilience, BASE_RESILIENCE);
+    assert_eq!(sheet.vitality(), 100);
+    assert_eq!(sheet.willpower(), 100);
+    assert_eq!(sheet.fortitude(), 100);
     assert_eq!(sheet.level, BASE_LEVEL);
     assert_eq!(sheet.holding(ItemType::Wood), 5);
     assert_eq!(sheet.holding(ItemType::Water), 5);
@@ -85,6 +88,29 @@ fn the_pylgrym_starts_from_the_base() {
             && item.item_type.is_supply()
     }));
     assert_eq!(sheet.holding_goods("knife"), 0);
+}
+
+#[test]
+fn derived_stats_are_the_floor_of_the_square_root_of_the_product() {
+    let mut world =
+        with_sheet("Player", 20, "Maphlian", "Farmer", "").expect("the sheet should load");
+    let sheet = world.people[0].sheet.as_mut().unwrap();
+
+    // Health 100 and fatigue 100: 100 * 100 is a perfect square.
+    assert_eq!(sheet.health, 100);
+    assert_eq!(sheet.fatigue, 100);
+    assert_eq!(sheet.vitality(), 100);
+
+    // Fatigue 50 and resilience 110: 50 * 110 = 5500, and 74² = 5476.
+    sheet.fatigue = 50;
+    sheet.resilience = 110;
+    assert_eq!(sheet.willpower(), 74);
+
+    // Resilience 8 and health 15: 8 * 15 = 120, which is not a square.
+    // 10² = 100 and 11² = 121, so the floor is 10.
+    sheet.resilience = 8;
+    sheet.health = 15;
+    assert_eq!(sheet.fortitude(), 10);
 }
 
 #[test]
