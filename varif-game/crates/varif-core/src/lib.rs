@@ -19,9 +19,10 @@ pub mod world;
 
 pub use calendar::Date;
 pub use character::{
-    Akstada, Blood, Character, Heritage, Item, ItemType, Rarity, Role, SheetError, Tongue,
-    BASE_ATTITUDE, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_ATTITUDE,
-    MIN_AGE, MIN_ATTITUDE, SUPPLY_DURABILITY, SUPPLY_VALUE, SUPPLY_WEIGHT,
+    Akstada, Blood, Character, Effect, EffectKind, EffectPayload, EquipSlot, Equipped, Heritage,
+    Item, ItemType, Rarity, Role, SheetError, Tongue, BASE_ATTITUDE, BASE_FATIGUE, BASE_HEALTH,
+    BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_ATTITUDE, MIN_AGE, MIN_ATTITUDE, SUPPLY_DURABILITY,
+    SUPPLY_VALUE, SUPPLY_WEIGHT,
 };
 pub use command::{Command, CommandError, Event, MemberFatigue};
 pub use data::{load_world, DataError};

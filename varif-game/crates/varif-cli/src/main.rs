@@ -6,7 +6,8 @@
 use std::io::{self, BufRead, Write};
 use std::{env, fs, process};
 use varif_core::{
-    load_world, Command, Event, Itinerary, MemberFatigue, PersonId, Place, PlaceId, World,
+    load_world, Command, EquipSlot, Event, Itinerary, MemberFatigue, PersonId, Place, PlaceId,
+    World,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -37,6 +38,11 @@ Commands:
   sleep           sleep at an inn for 5 copper, or at a residence for free
   write <text>    add a journal entry
   journal         read the journal
+  equip <item> in <slot>
+                  wear an item from the pack. Slots: shoes, legs, body,
+                  arms, gloves, head, back, main hand, off hand, robes, neck
+  unequip <slot>  put a worn item back in the pack
+  use <item>      use an item in the pack; it stays there
   save <file>     write the whole world to a file
   help            show this list
   quit            leave";
@@ -234,6 +240,20 @@ fn main() {
                         text: rest.to_string(),
                     },
                 );
+            }
+            "equip" => equip(&mut world, rest),
+            "unequip" => unequip(&mut world, rest),
+            "use" => {
+                if rest.is_empty() {
+                    println!("Usage: use <item>");
+                } else {
+                    run(
+                        &mut world,
+                        Command::Use {
+                            item: rest.to_string(),
+                        },
+                    );
+                }
             }
             "go" => asking = go(&mut world, rest),
             "save" if rest.is_empty() => println!("Save to which file?"),
@@ -478,6 +498,28 @@ fn describe(world: &World, event: &Event) -> String {
             "{}'s attitude toward the player is now {index}.",
             person_name(world, *person)
         ),
+        Event::Equipped { person, item, slot } => format!(
+            "{} equips the {item} on the {slot}.",
+            person_name(world, *person)
+        ),
+        Event::Unequipped { person, item, slot } => format!(
+            "{} takes the {item} off the {slot} and puts it back in the pack.",
+            person_name(world, *person)
+        ),
+        Event::Used { person, item } => {
+            format!("{} uses the {item}.", person_name(world, *person))
+        }
+        Event::EffectFired {
+            person,
+            item,
+            kind,
+            payload,
+        } => format!(
+            "{}'s {item}, {}, {}.",
+            person_name(world, *person),
+            kind.name(),
+            payload.note()
+        ),
         Event::PlaceAdded {
             place,
             from,
@@ -526,9 +568,18 @@ fn sheet(world: &World) {
     println!("  Background: {}", sheet.background);
     println!("  Level {}", sheet.level);
     println!(
-        "  Health {}    Fatigue {}    Resilience {}",
-        sheet.health, sheet.fatigue, sheet.resilience
+        "  Health {}    Fatigue {}    Resilience {} (max {})",
+        sheet.health,
+        sheet.fatigue,
+        sheet.resilience,
+        sheet.max_resilience()
     );
+    if sheet.effective_health() != sheet.health {
+        println!(
+            "  Health while items are carried or worn: {}",
+            sheet.effective_health()
+        );
+    }
     println!(
         "  Vitality {}    Willpower {}    Fortitude {}",
         sheet.vitality(),
@@ -547,6 +598,50 @@ fn sheet(world: &World) {
             }
         }
     }
+    if sheet.equipped.is_empty() {
+        println!("  Wearing nothing.");
+    } else {
+        println!("  Wearing:");
+        for worn in &sheet.equipped {
+            println!("    {} on the {}", worn.item.name, worn.slot.name());
+        }
+    }
+}
+
+fn equip(world: &mut World, rest: &str) {
+    const USAGE: &str = "Usage: equip <item> in <slot>, for example: equip Trail Shoes in shoes";
+    let Some((item, slot_text)) = rest.rsplit_once(" in ") else {
+        println!("{USAGE}");
+        return;
+    };
+    let item = item.trim();
+    if item.is_empty() {
+        println!("{USAGE}");
+        return;
+    }
+    let Some(slot) = EquipSlot::from_name(slot_text) else {
+        println!("There is no slot called \"{slot_text}\".");
+        return;
+    };
+    run(
+        world,
+        Command::Equip {
+            item: item.to_string(),
+            slot,
+        },
+    );
+}
+
+fn unequip(world: &mut World, rest: &str) {
+    if rest.is_empty() {
+        println!("Usage: unequip <slot>");
+        return;
+    }
+    let Some(slot) = EquipSlot::from_name(rest) else {
+        println!("There is no slot called \"{rest}\".");
+        return;
+    };
+    run(world, Command::Unequip { slot });
 }
 
 fn look(world: &World) {

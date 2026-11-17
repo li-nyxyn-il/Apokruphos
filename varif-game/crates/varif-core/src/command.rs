@@ -1,7 +1,10 @@
 //! Commands go in, events come out. The rules of the world live here.
 
 use crate::calendar::Date;
-use crate::character::{ItemType, Role, BASE_FATIGUE, MAX_ATTITUDE, MIN_ATTITUDE};
+use crate::character::{
+    EffectKind, EffectPayload, EquipSlot, Equipped, Item, ItemType, Role, BASE_FATIGUE,
+    MAX_ATTITUDE, MIN_ATTITUDE,
+};
 use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, World};
@@ -70,7 +73,8 @@ pub enum Command {
     /// fatigue, or clear the sleepless streak.
     MakeCamp,
     /// Sleep in the pitched camp and pass the night. Spends one food, one
-    /// water and one wood when the party carries them. A missing supply is a
+    /// water and one wood when the party carries them. That spend consumes
+    /// the item, so its consumed effects fire. A missing supply is a
     /// penalty, not a refusal. On the road this is also the camped march.
     Rest,
     /// Sleep one night where the party stands, when that is an inn or a
@@ -98,6 +102,15 @@ pub enum Command {
     /// Set an NPC's attitude toward the player, from [`MIN_ATTITUDE`] to
     /// [`MAX_ATTITUDE`]. The player has no attitude.
     SetAttitude { person: PersonId, index: u32 },
+    /// Wear an item from the player's pack in `slot`. The item leaves the
+    /// pack. The slot refuses an item that does not fit it, and a slot that
+    /// already holds something.
+    Equip { item: String, slot: EquipSlot },
+    /// Take the item in `slot` off and return it to the player's pack.
+    Unequip { slot: EquipSlot },
+    /// Fire the use effects of an item in the player's pack. The item stays
+    /// in the pack. Consumed effects do not fire.
+    Use { item: String },
 }
 
 /// Something that happened in the world as the result of a command.
@@ -225,6 +238,30 @@ pub enum Event {
         person: PersonId,
         index: u32,
     },
+    /// The player put an item from the pack into a slot.
+    Equipped {
+        person: PersonId,
+        item: String,
+        slot: EquipSlot,
+    },
+    /// The player took an item out of a slot and put it back in the pack.
+    Unequipped {
+        person: PersonId,
+        item: String,
+        slot: EquipSlot,
+    },
+    /// The player used an item in the pack. The item is still carried.
+    Used {
+        person: PersonId,
+        item: String,
+    },
+    /// A use or consumed effect fired.
+    EffectFired {
+        person: PersonId,
+        item: String,
+        kind: EffectKind,
+        payload: EffectPayload,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -273,6 +310,19 @@ pub enum CommandError {
     CannotCampInTown,
     /// An inn night costs copper the party does not have.
     CannotAfford,
+    /// The party has no player.
+    NoPlayer,
+    /// The player's pack does not hold this item.
+    NotCarrying(String),
+    /// The item does not fit the slot.
+    DoesNotFit {
+        item: String,
+        slot: EquipSlot,
+    },
+    /// The slot already holds an item.
+    SlotTaken(EquipSlot),
+    /// The slot is empty.
+    SlotEmpty(EquipSlot),
 }
 
 /// One party member's fatigue after a night that changed it.
@@ -331,6 +381,15 @@ impl fmt::Display for CommandError {
             CommandError::StillCamped => write!(f, "the party must pack up before it travels"),
             CommandError::CannotCampInTown => write!(f, "the party cannot camp inside a town"),
             CommandError::CannotAfford => write!(f, "the party cannot pay for the inn"),
+            CommandError::NoPlayer => write!(f, "there is no player"),
+            CommandError::NotCarrying(name) => {
+                write!(f, "the pack does not hold \"{name}\"")
+            }
+            CommandError::DoesNotFit { item, slot } => {
+                write!(f, "\"{item}\" does not fit the {slot}")
+            }
+            CommandError::SlotTaken(slot) => write!(f, "the {slot} already holds an item"),
+            CommandError::SlotEmpty(slot) => write!(f, "nothing is worn on the {slot}"),
         }
     }
 }
@@ -352,6 +411,9 @@ impl World {
                     | Command::PackUp
                     | Command::SetHostility { .. }
                     | Command::SetAttitude { .. }
+                    | Command::Equip { .. }
+                    | Command::Unequip { .. }
+                    | Command::Use { .. }
             )
         {
             return Err(CommandError::OnTheRoad);
@@ -373,6 +435,9 @@ impl World {
                 index,
             } => self.set_hostility(from, toward, index),
             Command::SetAttitude { person, index } => self.set_attitude(person, index),
+            Command::Equip { item, slot } => self.equip(item, slot),
+            Command::Unequip { slot } => self.unequip(slot),
+            Command::Use { item } => self.use_item(item),
         }
     }
 
@@ -624,23 +689,29 @@ impl World {
             return Err(CommandError::CannotAfford);
         }
 
-        if copper > 0 {
-            self.party_spends(ItemType::Copper, copper);
-        }
+        let spent = if copper > 0 {
+            let (spent, effects) = self.party_spends(ItemType::Copper, copper);
+            if !spent {
+                return Err(CommandError::CannotAfford);
+            }
+            effects
+        } else {
+            Vec::new()
+        };
         let on = self.date;
         let fatigue = self.restore_at_inn();
         self.nights_without_camp = 0;
         self.date = self.date.next_day();
-        Ok(vec![
-            Event::Slept {
-                at,
-                site,
-                on,
-                fatigue,
-                copper,
-            },
-            Event::DayPassed { date: self.date },
-        ])
+        let mut events = vec![Event::Slept {
+            at,
+            site,
+            on,
+            fatigue,
+            copper,
+        }];
+        events.extend(spent);
+        events.push(Event::DayPassed { date: self.date });
+        Ok(events)
     }
 
     /// True when every party member who has a sheet can pay `cost`.
@@ -755,15 +826,16 @@ impl World {
 
     /// Sleep in the pitched camp. This is the night: supplies are spent,
     /// fatigue is restored as on a camped march, and the date advances.
+    /// Spending a supply consumes it, so its consumed effects fire.
     /// Beside the road the camped march of [`LEAGUES_PER_DAY`] follows, and
     /// the camp is struck so the next night asks again.
     fn rest(&mut self) -> Result<Vec<Event>, CommandError> {
         if !self.camped {
             return Err(CommandError::NotCamped);
         }
-        let spent_food = self.party_spends(ItemType::Food, 1);
-        let spent_water = self.party_spends(ItemType::Water, 1);
-        let spent_wood = self.party_spends(ItemType::Wood, 1);
+        let (spent_food, food_effects) = self.party_spends(ItemType::Food, 1);
+        let (spent_water, water_effects) = self.party_spends(ItemType::Water, 1);
+        let (spent_wood, wood_effects) = self.party_spends(ItemType::Wood, 1);
         let at = self.party_at;
         let on = self.date;
         self.restore_on_road();
@@ -779,6 +851,9 @@ impl World {
             spent_water,
             spent_wood,
         }];
+        events.extend(food_effects);
+        events.extend(water_effects);
+        events.extend(wood_effects);
         if let Some(mut journey) = self.journey {
             self.camped = false;
             self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY);
@@ -811,24 +886,161 @@ impl World {
 
     /// Spends `count` of `item_type` from the party. False, and nothing is
     /// taken, when the party does not carry that many. A count of zero spends
-    /// nothing and succeeds.
-    fn party_spends(&mut self, item_type: ItemType, count: u32) -> bool {
+    /// nothing and succeeds. Each item taken is consumed: its consumed
+    /// effects fire on the person who carried it. Worn items are not spent.
+    fn party_spends(&mut self, item_type: ItemType, count: u32) -> (bool, Vec<Event>) {
         if count == 0 {
-            return true;
+            return (true, Vec::new());
         }
         if self.party_holding(item_type) < count {
-            return false;
+            return (false, Vec::new());
         }
         let mut left = count;
-        for person in self.people.iter_mut() {
-            if !person.in_party || left == 0 {
+        let mut events = Vec::new();
+        for index in 0..self.people.len() {
+            if !self.people[index].in_party || left == 0 {
                 continue;
             }
-            if let Some(sheet) = person.sheet.as_mut() {
-                left -= sheet.take(item_type, left);
+            if self.people[index].sheet.is_none() {
+                continue;
+            }
+            while left > 0 {
+                let taken = {
+                    let sheet = self.people[index]
+                        .sheet
+                        .as_mut()
+                        .expect("the sheet was checked");
+                    match sheet.take_one(item_type) {
+                        Some(item) => item,
+                        None => break,
+                    }
+                };
+                left -= 1;
+                events.extend(self.fire_consumed(index, &taken));
             }
         }
-        left == 0
+        (left == 0, events)
+    }
+
+    /// Fires the consumed effects of one item on the person at `index`.
+    fn fire_consumed(&mut self, index: usize, item: &Item) -> Vec<Event> {
+        let payloads: Vec<EffectPayload> = item
+            .effects
+            .iter()
+            .filter(|effect| effect.kind == EffectKind::Consumed)
+            .map(|effect| effect.payload)
+            .collect();
+        let mut events = Vec::new();
+        let Some(sheet) = self.people[index].sheet.as_mut() else {
+            return events;
+        };
+        for payload in payloads {
+            sheet.apply_instant(payload);
+            events.push(Event::EffectFired {
+                person: PersonId(index as u32),
+                item: item.name.clone(),
+                kind: EffectKind::Consumed,
+                payload,
+            });
+        }
+        events
+    }
+
+    fn player_index(&self) -> Result<usize, CommandError> {
+        self.people
+            .iter()
+            .position(|person| person.is_player())
+            .ok_or(CommandError::NoPlayer)
+    }
+
+    fn equip(&mut self, name: String, slot: EquipSlot) -> Result<Vec<Event>, CommandError> {
+        let index = self.player_index()?;
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err(CommandError::NotCarrying(name));
+        }
+        let sheet = self.people[index]
+            .sheet
+            .as_ref()
+            .ok_or(CommandError::NoPlayer)?;
+        let Some(item) = sheet.inventory.iter().find(|item| item.name == name) else {
+            return Err(CommandError::NotCarrying(name));
+        };
+        match item.slot {
+            Some(fits) if fits == slot => {}
+            _ => return Err(CommandError::DoesNotFit { item: name, slot }),
+        }
+        if sheet.equipped.iter().any(|worn| worn.slot == slot) {
+            return Err(CommandError::SlotTaken(slot));
+        }
+        let sheet = self.people[index]
+            .sheet
+            .as_mut()
+            .expect("the player sheet was checked");
+        let item = sheet
+            .take_named(&name)
+            .expect("the pack was checked for this item");
+        sheet.equipped.push(Equipped { slot, item });
+        Ok(vec![Event::Equipped {
+            person: PersonId(index as u32),
+            item: name,
+            slot,
+        }])
+    }
+
+    fn unequip(&mut self, slot: EquipSlot) -> Result<Vec<Event>, CommandError> {
+        let index = self.player_index()?;
+        let sheet = self.people[index]
+            .sheet
+            .as_mut()
+            .ok_or(CommandError::NoPlayer)?;
+        let Some(pos) = sheet.equipped.iter().position(|worn| worn.slot == slot) else {
+            return Err(CommandError::SlotEmpty(slot));
+        };
+        let worn = sheet.equipped.remove(pos);
+        let name = worn.item.name.clone();
+        sheet.carry(worn.item);
+        Ok(vec![Event::Unequipped {
+            person: PersonId(index as u32),
+            item: name,
+            slot,
+        }])
+    }
+
+    fn use_item(&mut self, name: String) -> Result<Vec<Event>, CommandError> {
+        let index = self.player_index()?;
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err(CommandError::NotCarrying(name));
+        }
+        let sheet = self.people[index]
+            .sheet
+            .as_mut()
+            .ok_or(CommandError::NoPlayer)?;
+        let Some(item) = sheet.inventory.iter().find(|item| item.name == name) else {
+            return Err(CommandError::NotCarrying(name));
+        };
+        let payloads: Vec<EffectPayload> = item
+            .effects
+            .iter()
+            .filter(|effect| effect.kind == EffectKind::Use)
+            .map(|effect| effect.payload)
+            .collect();
+        let person = PersonId(index as u32);
+        let mut events = vec![Event::Used {
+            person,
+            item: name.clone(),
+        }];
+        for payload in payloads {
+            sheet.apply_instant(payload);
+            events.push(Event::EffectFired {
+                person,
+                item: name.clone(),
+                kind: EffectKind::Use,
+                payload,
+            });
+        }
+        Ok(events)
     }
 
     /// Fatigue of each party member who has a sheet, as it stands now.

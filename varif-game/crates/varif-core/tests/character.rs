@@ -80,13 +80,16 @@ fn the_pylgrym_starts_from_the_base() {
     assert_eq!(sheet.holding(ItemType::Water), 5);
     assert_eq!(sheet.holding(ItemType::Food), 5);
     assert_eq!(sheet.holding(ItemType::Copper), 10);
-    assert!(sheet.inventory.iter().all(|item| {
-        item.weight == SUPPLY_WEIGHT
-            && item.value == SUPPLY_VALUE
-            && item.durability == SUPPLY_DURABILITY
-            && item.rarity == Rarity::Basic
-            && item.item_type.is_supply()
-    }));
+    assert!(sheet
+        .inventory
+        .iter()
+        .filter(|item| item.item_type.is_supply())
+        .all(|item| {
+            item.weight == SUPPLY_WEIGHT
+                && item.value == SUPPLY_VALUE
+                && item.durability == SUPPLY_DURABILITY
+                && item.rarity == Rarity::Basic
+        }));
     assert_eq!(sheet.holding_goods("knife"), 0);
 }
 

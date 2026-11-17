@@ -322,7 +322,7 @@ impl Rarity {
 }
 
 /// What a stack is. Food, water, wood and copper are the supplies. Anything
-/// else is goods, kept only so a pack can hold it, until equipment exists.
+/// else is goods. Goods may name one equipment slot they fit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemType {
     Food,
@@ -352,11 +352,159 @@ impl ItemType {
     }
 }
 
+/// Where one item can be worn. A character has one of each, and each holds
+/// one item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EquipSlot {
+    Shoes,
+    Legs,
+    Body,
+    Arms,
+    Gloves,
+    Head,
+    Back,
+    MainHand,
+    OffHand,
+    Robes,
+    Neck,
+}
+
+impl EquipSlot {
+    pub const ALL: [EquipSlot; 11] = [
+        EquipSlot::Shoes,
+        EquipSlot::Legs,
+        EquipSlot::Body,
+        EquipSlot::Arms,
+        EquipSlot::Gloves,
+        EquipSlot::Head,
+        EquipSlot::Back,
+        EquipSlot::MainHand,
+        EquipSlot::OffHand,
+        EquipSlot::Robes,
+        EquipSlot::Neck,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EquipSlot::Shoes => "shoes",
+            EquipSlot::Legs => "legs",
+            EquipSlot::Body => "body",
+            EquipSlot::Arms => "arms",
+            EquipSlot::Gloves => "gloves",
+            EquipSlot::Head => "head",
+            EquipSlot::Back => "back",
+            EquipSlot::MainHand => "main hand",
+            EquipSlot::OffHand => "off hand",
+            EquipSlot::Robes => "robes",
+            EquipSlot::Neck => "neck",
+        }
+    }
+
+    /// Reads a slot name. "main-hand" and "main hand" are the main hand.
+    pub fn from_name(text: &str) -> Option<EquipSlot> {
+        let text = text.trim().to_lowercase().replace('-', " ");
+        match text.as_str() {
+            "shoes" => Some(EquipSlot::Shoes),
+            "legs" => Some(EquipSlot::Legs),
+            "body" => Some(EquipSlot::Body),
+            "arms" => Some(EquipSlot::Arms),
+            "gloves" => Some(EquipSlot::Gloves),
+            "head" => Some(EquipSlot::Head),
+            "back" => Some(EquipSlot::Back),
+            "main" | "main hand" | "mainhand" => Some(EquipSlot::MainHand),
+            "off" | "off hand" | "offhand" => Some(EquipSlot::OffHand),
+            "robes" => Some(EquipSlot::Robes),
+            "neck" => Some(EquipSlot::Neck),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for EquipSlot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// When an [`Effect`] applies.
+///
+/// Equipment and inventory effects stay in force while their condition
+/// holds. Use and consumed effects happen once, when the item is used or
+/// consumed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectKind {
+    /// In force while the item is worn in its slot.
+    Equipment,
+    /// In force while the item is carried in the pack, and not while it is worn.
+    Inventory,
+    /// Happens when the item is used. The item stays in the pack.
+    Use,
+    /// Happens when the item is consumed.
+    Consumed,
+}
+
+impl EffectKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            EffectKind::Equipment => "equipped",
+            EffectKind::Inventory => "carried",
+            EffectKind::Use => "used",
+            EffectKind::Consumed => "consumed",
+        }
+    }
+}
+
+/// What an [`Effect`] does. This is a closed list: there is no script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectPayload {
+    /// Adds health. A used or consumed effect adds it to the stored health.
+    /// An equipment or inventory effect adds it only while that effect is in
+    /// force, and leaves the stored health alone.
+    RestoreHealth { amount: u32 },
+    /// Raises the maximum resilience. A used or consumed effect raises the
+    /// stored maximum. An equipment or inventory effect adds to the maximum
+    /// only while that effect is in force.
+    RaiseMaxResilience { amount: u32 },
+    /// Adds vitality after `floor(sqrt(health * fatigue))`. It does not
+    /// change health or fatigue. A used or consumed effect keeps the bonus.
+    /// An equipment or inventory effect adds it only while that effect is in
+    /// force.
+    AddVitality { amount: u32 },
+}
+
+impl EffectPayload {
+    /// A short description of the payload, for a host to show.
+    pub fn note(self) -> String {
+        match self {
+            EffectPayload::RestoreHealth { amount } => format!("restores {amount} health"),
+            EffectPayload::RaiseMaxResilience { amount } => {
+                format!("raises max resilience by {amount}")
+            }
+            EffectPayload::AddVitality { amount } => format!("adds {amount} vitality"),
+        }
+    }
+}
+
+/// One effect on an item. An item may carry several.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Effect {
+    pub kind: EffectKind,
+    pub payload: EffectPayload,
+}
+
+/// One item worn in a slot. It is not in the pack.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Equipped {
+    pub slot: EquipSlot,
+    pub item: Item,
+}
+
 /// One stack in an inventory.
 ///
 /// `count` is how many are carried, and it is the only field a rule spends.
 /// Weight, value, durability and rarity are stored for later. Two supplies of the
 /// same [`ItemType`] are one stack. Two goods are one stack when the name matches.
+/// Effects are stored on the stack and saved with it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
     pub name: String,
@@ -377,6 +525,12 @@ pub struct Item {
     /// [`Rarity::Basic`]. Nothing reads this yet.
     #[serde(default)]
     pub rarity: Rarity,
+    /// The only slot this item fits. `None` means it cannot be equipped.
+    #[serde(default)]
+    pub slot: Option<EquipSlot>,
+    /// Effects stored on the item. Empty when it has none.
+    #[serde(default)]
+    pub effects: Vec<Effect>,
 }
 
 impl Item {
@@ -391,6 +545,8 @@ impl Item {
             count,
             durability: SUPPLY_DURABILITY,
             rarity: Rarity::Basic,
+            slot: None,
+            effects: Vec::new(),
         }
     }
 
@@ -405,6 +561,8 @@ impl Item {
             count,
             durability: SUPPLY_DURABILITY,
             rarity: Rarity::Basic,
+            slot: None,
+            effects: Vec::new(),
         }
     }
 
@@ -430,6 +588,15 @@ pub enum SheetError {
     AttitudeOutOfRange(u32),
     FactionRepeated(FactionId),
     FollowerWithoutPlayerFaction,
+    /// Two worn items name the same slot.
+    DuplicateSlot(EquipSlot),
+    /// A worn item does not fit the slot it sits in.
+    ItemDoesNotFit {
+        item: String,
+        slot: EquipSlot,
+    },
+    /// A worn slot holds a stack rather than one item.
+    EquippedCount(String),
 }
 
 impl fmt::Display for SheetError {
@@ -458,6 +625,15 @@ impl fmt::Display for SheetError {
             SheetError::FollowerWithoutPlayerFaction => {
                 write!(f, "a follower does not carry the Player faction")
             }
+            SheetError::DuplicateSlot(slot) => {
+                write!(f, "two items are worn on the {slot}")
+            }
+            SheetError::ItemDoesNotFit { item, slot } => {
+                write!(f, "\"{item}\" does not fit the {slot}")
+            }
+            SheetError::EquippedCount(name) => {
+                write!(f, "\"{name}\" must be one item when it is worn")
+            }
         }
     }
 }
@@ -468,6 +644,8 @@ impl fmt::Display for SheetError {
 /// file may set them to something else; omitting them keeps the base.
 /// Vitality, willpower and fortitude are not stored. Each is the integer
 /// floor of the square root of the product of two of those body stats.
+/// An effect may add vitality after that floor, or raise the maximum
+/// resilience, without changing the two stats the floor was taken from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Character {
     /// Player, or an NPC who may also be a follower.
@@ -492,9 +670,19 @@ pub struct Character {
     #[serde(default)]
     pub road_rest_debt: bool,
     /// How well the character weathers what the road does to them. A new
-    /// character starts at [`BASE_RESILIENCE`].
+    /// character starts at [`BASE_RESILIENCE`]. This is the current value.
+    /// [`Character::max_resilience`] is how high it can sit.
     #[serde(default = "base_resilience")]
     pub resilience: u32,
+    /// Stored maximum resilience, before equipment and inventory effects.
+    /// A new character starts at [`BASE_RESILIENCE`]. A used or consumed
+    /// effect can raise it. Omitting it in a data file keeps the base.
+    #[serde(default = "base_resilience")]
+    pub resilience_max: u32,
+    /// Vitality added by a used or consumed effect. Equipment and inventory
+    /// vitality is computed, not stored here.
+    #[serde(default)]
+    pub vitality_bonus: u32,
     /// Tongues the character can speak, with no repeats.
     pub tongues: Vec<Tongue>,
     /// The life before the road. There is no closed list of backgrounds yet,
@@ -509,8 +697,13 @@ pub struct Character {
     pub secondary: Vec<FactionId>,
     #[serde(default = "base_level")]
     pub level: u32,
+    /// The pack. Equipped items are not in this list.
     #[serde(default)]
     pub inventory: Vec<Item>,
+    /// Items worn in slots. Each slot holds one item. Nothing here is counted
+    /// as carried.
+    #[serde(default)]
+    pub equipped: Vec<Equipped>,
 }
 
 fn base_health() -> u32 {
@@ -561,12 +754,15 @@ impl Character {
             fatigue: base_fatigue(),
             road_rest_debt: false,
             resilience: base_resilience(),
+            resilience_max: base_resilience(),
+            vitality_bonus: 0,
             tongues,
             background: background.into(),
             primary,
             secondary,
             level: base_level(),
             inventory: Vec::new(),
+            equipped: Vec::new(),
         };
         sheet.adopt_player_faction();
         sheet.check()?;
@@ -604,6 +800,28 @@ impl Character {
             }
             seen_items.push(item);
         }
+        let mut seen_slots: Vec<EquipSlot> = Vec::new();
+        for worn in &self.equipped {
+            if worn.item.name.trim().is_empty() {
+                return Err(SheetError::BlankItem);
+            }
+            if worn.item.count != 1 {
+                return Err(SheetError::EquippedCount(worn.item.name.clone()));
+            }
+            match worn.item.slot {
+                Some(fits) if fits == worn.slot => {}
+                _ => {
+                    return Err(SheetError::ItemDoesNotFit {
+                        item: worn.item.name.clone(),
+                        slot: worn.slot,
+                    })
+                }
+            }
+            if seen_slots.contains(&worn.slot) {
+                return Err(SheetError::DuplicateSlot(worn.slot));
+            }
+            seen_slots.push(worn.slot);
+        }
         if let Some(attitude) = self.role.attitude() {
             if !(MIN_ATTITUDE..=MAX_ATTITUDE).contains(&attitude) {
                 return Err(SheetError::AttitudeOutOfRange(attitude));
@@ -622,11 +840,69 @@ impl Character {
         Ok(())
     }
 
-    /// Vitality, from health and fatigue: `floor(sqrt(health * fatigue))`.
+    /// Vitality, from health and fatigue: `floor(sqrt(health * fatigue))`,
+    /// plus vitality from effects.
     ///
-    /// Health 100 and fatigue 100 is 100. Computed from the sheet, not stored.
+    /// Health 100 and fatigue 100 is 100 before any effect. An equipment or
+    /// inventory effect adds its vitality after that floor, and only while
+    /// the effect is in force. It does not change health or fatigue. A used
+    /// or consumed effect adds to [`Character::vitality_bonus`] and stays.
     pub fn vitality(&self) -> u32 {
+        let passive = self.passive();
         floor_sqrt_product(self.health, self.fatigue)
+            .saturating_add(self.vitality_bonus)
+            .saturating_add(passive.vitality)
+    }
+
+    /// The maximum resilience: the stored maximum, plus equipment and
+    /// inventory effects that are in force now.
+    ///
+    /// Raising the maximum does not change [`Character::resilience`].
+    pub fn max_resilience(&self) -> u32 {
+        self.resilience_max
+            .saturating_add(self.passive().max_resilience)
+    }
+
+    /// Stored health plus any equipment or inventory effect that restores
+    /// health while it is in force. The stored health is left as it is.
+    pub fn effective_health(&self) -> u32 {
+        self.health.saturating_add(self.passive().health)
+    }
+
+    /// The item worn in `slot`, if any.
+    pub fn in_slot(&self, slot: EquipSlot) -> Option<&Item> {
+        self.equipped
+            .iter()
+            .find(|worn| worn.slot == slot)
+            .map(|worn| &worn.item)
+    }
+
+    /// Equipment and inventory effects that are in force, counted once per
+    /// item in a stack.
+    fn passive(&self) -> Passive {
+        let mut passive = Passive::default();
+        for item in &self.inventory {
+            passive.add(item, EffectKind::Inventory);
+        }
+        for worn in &self.equipped {
+            passive.add(&worn.item, EffectKind::Equipment);
+        }
+        passive
+    }
+
+    /// Applies a used or consumed payload to the stored stats.
+    pub(crate) fn apply_instant(&mut self, payload: EffectPayload) {
+        match payload {
+            EffectPayload::RestoreHealth { amount } => {
+                self.health = self.health.saturating_add(amount);
+            }
+            EffectPayload::RaiseMaxResilience { amount } => {
+                self.resilience_max = self.resilience_max.saturating_add(amount);
+            }
+            EffectPayload::AddVitality { amount } => {
+                self.vitality_bonus = self.vitality_bonus.saturating_add(amount);
+            }
+        }
     }
 
     /// Willpower, from fatigue and resilience: `floor(sqrt(fatigue * resilience))`.
@@ -699,31 +975,49 @@ impl Character {
     }
 
     /// Removes up to `count` of `item_type`. Returns how many were removed.
-    /// A stack that reaches zero is dropped.
+    /// A stack that reaches zero is dropped. Worn items are not taken.
     pub fn take(&mut self, item_type: ItemType, mut count: u32) -> u32 {
         let mut taken = 0;
-        while count > 0 {
-            let Some(pos) = self
-                .inventory
-                .iter()
-                .position(|item| item.item_type == item_type && item.count > 0)
-            else {
-                break;
-            };
-            let have = self.inventory[pos].count;
-            let n = have.min(count);
-            if n == have {
-                self.inventory.remove(pos);
-            } else {
-                self.inventory[pos].count -= n;
-            }
-            taken += n;
-            count -= n;
+        while count > 0 && self.take_one(item_type).is_some() {
+            taken += 1;
+            count -= 1;
         }
         taken
     }
 
-    /// How many of `item_type` are carried, across every matching stack.
+    /// Removes one of `item_type` from the pack. The returned item has a
+    /// count of 1 and the stack's effects. Worn items are not taken.
+    pub(crate) fn take_one(&mut self, item_type: ItemType) -> Option<Item> {
+        let pos = self
+            .inventory
+            .iter()
+            .position(|item| item.item_type == item_type && item.count > 0)?;
+        Some(self.split_off(pos))
+    }
+
+    /// Removes one item of this name from the pack. Worn items are not taken.
+    pub(crate) fn take_named(&mut self, name: &str) -> Option<Item> {
+        let pos = self
+            .inventory
+            .iter()
+            .position(|item| item.name == name && item.count > 0)?;
+        Some(self.split_off(pos))
+    }
+
+    /// Takes one from the stack at `pos`. The caller has found `pos`.
+    fn split_off(&mut self, pos: usize) -> Item {
+        let mut taken = self.inventory[pos].clone();
+        taken.count = 1;
+        if self.inventory[pos].count == 1 {
+            self.inventory.remove(pos);
+        } else {
+            self.inventory[pos].count -= 1;
+        }
+        taken
+    }
+
+    /// How many of `item_type` are carried in the pack. Worn items are not
+    /// counted.
     pub fn holding(&self, item_type: ItemType) -> u32 {
         self.inventory
             .iter()
@@ -731,11 +1025,44 @@ impl Character {
             .fold(0, |sum, item| sum.saturating_add(item.count))
     }
 
-    /// How many goods of this name are carried. Supplies are not goods.
+    /// How many goods of this name are carried in the pack. Worn items are
+    /// not counted. Supplies are not goods.
     pub fn holding_goods(&self, name: &str) -> u32 {
         self.inventory
             .iter()
             .find(|item| item.item_type == ItemType::Goods && item.name == name)
             .map_or(0, |item| item.count)
+    }
+}
+
+/// Equipment and inventory bonuses that are in force.
+#[derive(Clone, Copy, Debug, Default)]
+struct Passive {
+    health: u32,
+    max_resilience: u32,
+    vitality: u32,
+}
+
+impl Passive {
+    fn add(&mut self, item: &Item, kind: EffectKind) {
+        for effect in item.effects.iter().filter(|effect| effect.kind == kind) {
+            let amount = match effect.payload {
+                EffectPayload::RestoreHealth { amount }
+                | EffectPayload::RaiseMaxResilience { amount }
+                | EffectPayload::AddVitality { amount } => amount,
+            };
+            let amount = amount.saturating_mul(item.count);
+            match effect.payload {
+                EffectPayload::RestoreHealth { .. } => {
+                    self.health = self.health.saturating_add(amount);
+                }
+                EffectPayload::RaiseMaxResilience { .. } => {
+                    self.max_resilience = self.max_resilience.saturating_add(amount);
+                }
+                EffectPayload::AddVitality { .. } => {
+                    self.vitality = self.vitality.saturating_add(amount);
+                }
+            }
+        }
     }
 }
