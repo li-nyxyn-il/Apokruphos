@@ -523,6 +523,7 @@
         // Health, fatigue, resilience and level are left out, so they stay
         // at their base. The pack is the party's starting supplies.
         // Weight, value and durability are 1 until a rule names them.
+        // Food, water, wood and copper start at Basic rarity.
         (
             key: "pylgrym",
             name: "The Pylgrym",
@@ -539,10 +540,10 @@
                 background: "Pylgrym",
                 primary: Player,
                 inventory: [
-                    (name: "Wood", type: Wood, weight: 1, value: 1, count: 5, durability: 1),
-                    (name: "Water", type: Water, weight: 1, value: 1, count: 5, durability: 1),
-                    (name: "Food", type: Food, weight: 1, value: 1, count: 5, durability: 1),
-                    (name: "Copper", type: Copper, weight: 1, value: 1, count: 10, durability: 1),
+                    (name: "Wood", type: Wood, weight: 1, value: 1, count: 5, durability: 1, rarity: Basic),
+                    (name: "Water", type: Water, weight: 1, value: 1, count: 5, durability: 1, rarity: Basic),
+                    (name: "Food", type: Food, weight: 1, value: 1, count: 5, durability: 1, rarity: Basic),
+                    (name: "Copper", type: Copper, weight: 1, value: 1, count: 10, durability: 1, rarity: Basic),
                 ],
             ),
         ),

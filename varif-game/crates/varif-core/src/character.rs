@@ -284,6 +284,43 @@ fn supply_stat() -> u32 {
     SUPPLY_WEIGHT
 }
 
+/// How rare an item is. The levels run from Basic to Apocryphal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Rarity {
+    #[default]
+    Basic,
+    Common,
+    Notable,
+    Great,
+    Legendary,
+    Mythic,
+    Apocryphal,
+}
+
+impl Rarity {
+    pub const ALL: [Rarity; 7] = [
+        Rarity::Basic,
+        Rarity::Common,
+        Rarity::Notable,
+        Rarity::Great,
+        Rarity::Legendary,
+        Rarity::Mythic,
+        Rarity::Apocryphal,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Rarity::Basic => "Basic",
+            Rarity::Common => "Common",
+            Rarity::Notable => "Notable",
+            Rarity::Great => "Great",
+            Rarity::Legendary => "Legendary",
+            Rarity::Mythic => "Mythic",
+            Rarity::Apocryphal => "Apocryphal",
+        }
+    }
+}
+
 /// What a stack is. Food, water, wood and copper are the supplies. Anything
 /// else is goods, kept only so a pack can hold it, until equipment exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -318,7 +355,7 @@ impl ItemType {
 /// One stack in an inventory.
 ///
 /// `count` is how many are carried, and it is the only field a rule spends.
-/// Weight, value and durability are stored for later. Two supplies of the
+/// Weight, value, durability and rarity are stored for later. Two supplies of the
 /// same [`ItemType`] are one stack. Two goods are one stack when the name matches.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
@@ -336,10 +373,15 @@ pub struct Item {
     /// How much use one of the stack has left.
     #[serde(default = "supply_stat")]
     pub durability: u32,
+    /// How rare one of the stack is. Food, water, wood and copper start at
+    /// [`Rarity::Basic`]. Nothing reads this yet.
+    #[serde(default)]
+    pub rarity: Rarity,
 }
 
 impl Item {
-    /// A supply stack with the placeholder weight, value and durability.
+    /// A supply stack with the placeholder weight, value and durability,
+    /// at [`Rarity::Basic`].
     pub fn supply(item_type: ItemType, count: u32) -> Item {
         Item {
             name: item_type.label().to_string(),
@@ -348,10 +390,12 @@ impl Item {
             value: SUPPLY_VALUE,
             count,
             durability: SUPPLY_DURABILITY,
+            rarity: Rarity::Basic,
         }
     }
 
     /// Something that is not a supply. The name is its identity.
+    /// Rarity starts at [`Rarity::Basic`].
     pub fn goods(name: impl Into<String>, count: u32) -> Item {
         Item {
             name: name.into(),
@@ -360,6 +404,7 @@ impl Item {
             value: SUPPLY_VALUE,
             count,
             durability: SUPPLY_DURABILITY,
+            rarity: Rarity::Basic,
         }
     }
 
@@ -606,7 +651,7 @@ impl Character {
 
     /// Adds `item` to the inventory. A stack of the same supply, or goods of
     /// the same name, grows by `count`. A count of zero adds nothing.
-    /// Weight, value and durability stay as the stack already stored them.
+    /// Weight, value, durability and rarity stay as the stack already stored them.
     pub fn carry(&mut self, item: Item) {
         if item.count == 0 {
             return;
