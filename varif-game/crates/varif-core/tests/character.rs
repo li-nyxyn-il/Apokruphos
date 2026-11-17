@@ -1,9 +1,9 @@
 //! The player sheet: what a valid character is, and what the data file may say.
 
 use varif_core::{
-    load_world, Akstada, Blood, DataError, Heritage, Item, ItemType, Role, SheetError, Tongue,
-    World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, SUPPLY_DURABILITY, SUPPLY_VALUE,
-    SUPPLY_WEIGHT,
+    load_world, Akstada, Blood, DataError, Heritage, Item, ItemType, Rarity, Role, SheetError,
+    Tongue, World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, SUPPLY_DURABILITY,
+    SUPPLY_VALUE, SUPPLY_WEIGHT,
 };
 
 const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
@@ -81,6 +81,8 @@ fn the_pylgrym_starts_from_the_base() {
         item.weight == SUPPLY_WEIGHT
             && item.value == SUPPLY_VALUE
             && item.durability == SUPPLY_DURABILITY
+            && item.rarity == Rarity::Basic
+            && item.item_type.is_supply()
     }));
     assert_eq!(sheet.holding_goods("knife"), 0);
 }
@@ -145,13 +147,110 @@ fn the_inventory_stacks_by_type() {
         .find(|item| item.item_type == ItemType::Food)
         .unwrap();
     assert_eq!(
-        (food.weight, food.value, food.count, food.durability),
-        (SUPPLY_WEIGHT, SUPPLY_VALUE, 5, SUPPLY_DURABILITY)
+        (
+            food.weight,
+            food.value,
+            food.count,
+            food.durability,
+            food.rarity
+        ),
+        (
+            SUPPLY_WEIGHT,
+            SUPPLY_VALUE,
+            5,
+            SUPPLY_DURABILITY,
+            Rarity::Basic
+        )
     );
     assert_eq!(sheet.inventory.len(), 3);
 
     let saved = World::from_ron(&world.to_ron().unwrap()).unwrap();
     assert_eq!(saved, world);
+}
+
+#[test]
+fn rarity_is_seven_levels_and_supplies_start_basic() {
+    assert_eq!(
+        Rarity::ALL.map(Rarity::name),
+        [
+            "Basic",
+            "Common",
+            "Notable",
+            "Great",
+            "Legendary",
+            "Mythic",
+            "Apocryphal",
+        ]
+    );
+    assert!(Rarity::ALL.windows(2).all(|pair| pair[0] < pair[1]));
+
+    for kind in [
+        ItemType::Food,
+        ItemType::Water,
+        ItemType::Wood,
+        ItemType::Copper,
+    ] {
+        let supply = Item::supply(kind, 1);
+        assert_eq!(supply.rarity, Rarity::Basic);
+        assert_eq!(supply.item_type, kind);
+    }
+
+    let inventory = Rarity::ALL
+        .iter()
+        .map(|rarity| {
+            format!(
+                r#"(name: "{}", type: Goods, count: 1, rarity: {:?})"#,
+                rarity.name(),
+                rarity
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let world = with_sheet(
+        "Player",
+        20,
+        "Shentz",
+        "Farmer",
+        &format!("inventory: [{inventory}]"),
+    )
+    .expect("each rarity should load");
+    let sheet = world.people[0].sheet.as_ref().unwrap();
+    assert_eq!(sheet.inventory.len(), Rarity::ALL.len());
+    for (item, rarity) in sheet.inventory.iter().zip(Rarity::ALL) {
+        assert_eq!(item.name, rarity.name());
+        assert_eq!(item.rarity, rarity);
+    }
+    let saved = World::from_ron(&world.to_ron().unwrap()).unwrap();
+    assert_eq!(saved.people[0].sheet, world.people[0].sheet);
+
+    let omitted = with_sheet(
+        "Player",
+        20,
+        "Shentz",
+        "Farmer",
+        r#"inventory: [(name: "Food", type: Food, count: 1)]"#,
+    )
+    .expect("a supply with no rarity starts at Basic");
+    let food = &omitted.people[0].sheet.as_ref().unwrap().inventory[0];
+    assert_eq!(food.item_type, ItemType::Food);
+    assert_eq!(food.rarity, Rarity::Basic);
+
+    let bad = with_sheet(
+        "Player",
+        20,
+        "Shentz",
+        "Farmer",
+        r#"inventory: [(name: "Relic", type: Goods, count: 1, rarity: Unique)]"#,
+    );
+    match bad.expect_err("an unknown rarity should be refused") {
+        DataError::Parse(message) => {
+            assert!(
+                message.contains("Unique") || message.contains("Rarity"),
+                "the parse error should name the rarity, got {message}"
+            );
+        }
+        other => panic!("expected a parse error, got {other}"),
+    }
 }
 
 #[test]

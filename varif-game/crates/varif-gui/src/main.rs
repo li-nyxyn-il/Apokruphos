@@ -885,9 +885,14 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
             ui.weak("Carrying:");
             for item in &sheet.inventory {
                 if item.count == 1 {
-                    ui.label(&item.name);
+                    ui.label(format!("{} {}", item.rarity.name(), item.name));
                 } else {
-                    ui.label(format!("{} ({})", item.name, item.count));
+                    ui.label(format!(
+                        "{} {} ({})",
+                        item.rarity.name(),
+                        item.name,
+                        item.count
+                    ));
                 }
             }
         }

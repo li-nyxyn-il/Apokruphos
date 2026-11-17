@@ -535,9 +535,9 @@ fn sheet(world: &World) {
         println!("  Carrying:");
         for item in &sheet.inventory {
             if item.count == 1 {
-                println!("    {}", item.name);
+                println!("    {} {}", item.rarity.name(), item.name);
             } else {
-                println!("    {} ({})", item.name, item.count);
+                println!("    {} {} ({})", item.rarity.name(), item.name, item.count);
             }
         }
     }
