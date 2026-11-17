@@ -27,4 +27,15 @@ These rows are implied by the style guide's zoom tiers, biome notes, and night-s
 | SL-015 | Other biome floor tiles | 1 | 32×16 diamond | still | day and night | backlog | One tileset per style-guide biome, sharing core stone: alpine granite, conifer valley, desert canyon, Appalachian ridge. |
 | SL-016 | Shared architecture | 1 | 32×16 floor; 32×(16+16n) walls | still | day and night | backlog | Roads, keeps, cut ashlar. Cold Ashlar, Cliff Teal, and the warm-stone ramp in every biome, so a Line keep does not change hue family when the map tiles do. Hexagonal Krypts stay later, as in the style guide. |
 
+## Mythic items — added 2026-11-16
+
+All Four Swords exist in the game as mythic-tier items, extremely rare and powerful artifacts. Show mythic icons at 48 or 64 px; 32 px loses the detail.
+
+| id | asset | tier | canvas | frames | palette mode | status | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SL-020 | Niaviopti, the white sword | item | 32×32, 48×48, 64×64 | still | core metals + torchlight/sunset oranges | draft | Aiden's saber in APP. White and orange. Pearl pommel with a faint orange glow. Files: `item_niaviopti_s{32,48,64}_t1.png`, 0 off-palette pixels. A dedicated pearl and white-gold ramp is due in the next palette pass. |
+| SL-021 | Myhkiyas, the black sword | item | 48×48 and 64×64 | still | core | backlog | Black and gold. No reference image yet. |
+| SL-022 | Loukoztxui, the red sword | item | 48×48 and 64×64 | still | core + night reds | backlog | Red and black. No reference image yet. |
+| SL-023 | Kraiaghautz, the pale sword | item | 48×48 and 64×64 | still | core | backlog | Pale and black. No reference image yet. |
+
 Promote a backlog row into a dated first-set (or next-set) table when it is scheduled to be drawn. Do not add named characters, Lines, or constellations that are not already in the style guide.

@@ -14,7 +14,7 @@ All tokens are lowercase ASCII, digits, and underscores only. No spaces, no hyph
 
 | Token | Required? | Vocabulary |
 | --- | --- | --- |
-| `category` | yes | `char`, `tile`, `token`, `banner`, `sky`, `prop`, `ui` |
+| `category` | yes | `char`, `tile`, `token`, `banner`, `sky`, `prop`, `ui`, `item` |
 | `subject` | yes | The thing drawn: `kaenyn`, `grass`, `starfield`, `keep`. A unique character name, a terrain material, or a sky pass. |
 | `variant` | when it distinguishes the asset | Line, biome, outfit, or role: `audsen`, `meadow`, `void`, `formal`. |
 | `action` | characters and other animated subjects | `idle`, and later `walk`, `attack`, and so on. Omit on still tiles, tokens, banners, and sky plates. |
@@ -84,3 +84,7 @@ A Line banner is a colour-tendency mark (Audsen maroon and gold, when that banne
 ## Sheets and metadata
 
 A packed atlas is a power-of-two PNG named for its contents and tier, for example `varif_char_t1.png` or `varif_tile_t1.png`. The companion JSON uses the same stem: `varif_char_t1.json`. Individual source files keep the long name above, even when they are later packed.
+
+## Item icons (added 2026-11-16)
+
+Inventory and loot icons use the `item` category. The variant token is the icon size, `s32`, `s48`, or `s64`, and the tier is `t1`. Example: `item_niaviopti_s64_t1.png`. Mythic items live in `items/mythic/`. Upscaled previews and comparison sheets go in a `preview/` subfolder and are exempt from this convention.
