@@ -521,9 +521,15 @@
         // here once the cast of the era is decided.
         // ASSUMPTION: the whole sheet, until character creation chooses it.
         // Health, fatigue, resilience and level are left out, so they stay
-        // at their base. The pack is the party's starting supplies.
+        // at their base. The pack is the party's starting supplies, three
+        // sample item effects, and one item for each equipment slot.
         // Weight, value and durability are 1 until a rule names them.
         // Food, water, wood and copper start at Basic rarity.
+        // Food restores 10 health when a camp consumes it. The Hearth Stone
+        // raises max resilience by 10 while it is carried. The Pulse Cord
+        // adds 5 vitality while it is worn, after the derived floor of
+        // sqrt(health * fatigue). Worn items are not in this pack until
+        // they are taken off.
         (
             key: "pylgrym",
             name: "The Pylgrym",
@@ -542,8 +548,49 @@
                 inventory: [
                     (name: "Wood", type: Wood, weight: 1, value: 1, count: 5, durability: 1, rarity: Basic),
                     (name: "Water", type: Water, weight: 1, value: 1, count: 5, durability: 1, rarity: Basic),
-                    (name: "Food", type: Food, weight: 1, value: 1, count: 5, durability: 1, rarity: Basic),
+                    (
+                        name: "Food",
+                        type: Food,
+                        weight: 1,
+                        value: 1,
+                        count: 5,
+                        durability: 1,
+                        rarity: Basic,
+                        effects: [(kind: Consumed, payload: RestoreHealth(amount: 10))],
+                    ),
                     (name: "Copper", type: Copper, weight: 1, value: 1, count: 10, durability: 1, rarity: Basic),
+                    (
+                        name: "Hearth Stone",
+                        type: Goods,
+                        weight: 1,
+                        value: 1,
+                        count: 1,
+                        durability: 1,
+                        rarity: Basic,
+                        effects: [(kind: Inventory, payload: RaiseMaxResilience(amount: 10))],
+                    ),
+                    (
+                        name: "Pulse Cord",
+                        type: Goods,
+                        weight: 1,
+                        value: 1,
+                        count: 1,
+                        durability: 1,
+                        rarity: Basic,
+                        slot: Neck,
+                        effects: [(kind: Equipment, payload: AddVitality(amount: 5))],
+                    ),
+                    (name: "Trail Shoes", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Shoes),
+                    (name: "Trail Breeches", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Legs),
+                    (name: "Trail Coat", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Body),
+                    (name: "Trail Bracers", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Arms),
+                    (name: "Trail Gloves", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Gloves),
+                    (name: "Trail Hood", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Head),
+                    (name: "Trail Roll", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Back),
+                    (name: "Trail Staff", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: MainHand),
+                    (name: "Trail Knife", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: OffHand),
+                    (name: "Trail Robes", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Robes),
+                    (name: "Trail Torc", type: Goods, weight: 1, value: 1, count: 1, durability: 1, rarity: Basic, slot: Neck),
                 ],
             ),
         ),

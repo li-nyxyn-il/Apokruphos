@@ -17,9 +17,9 @@ use layout::MapLayout;
 use std::path::Path;
 use std::{env, fs, process};
 use varif_core::{
-    load_world, Akstada, Blood, Command, Event, FactionId, Heritage, Itinerary, MemberFatigue,
-    PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World, BASE_FATIGUE,
-    BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
+    load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
+    MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
+    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -876,9 +876,18 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         ui.weak(format!("Background: {}", sheet.background));
         ui.label(format!("Level {}", sheet.level));
         ui.label(format!(
-            "Health {}    Fatigue {}    Resilience {}",
-            sheet.health, sheet.fatigue, sheet.resilience
+            "Health {}    Fatigue {}    Resilience {} (max {})",
+            sheet.health,
+            sheet.fatigue,
+            sheet.resilience,
+            sheet.max_resilience()
         ));
+        if sheet.effective_health() != sheet.health {
+            ui.label(format!(
+                "Health while items are carried or worn: {}",
+                sheet.effective_health()
+            ));
+        }
         ui.label(format!(
             "Vitality {}    Willpower {}    Fortitude {}",
             sheet.vitality(),
@@ -890,16 +899,51 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         } else {
             ui.weak("Carrying:");
             for item in &sheet.inventory {
-                if item.count == 1 {
-                    ui.label(format!("{} {}", item.rarity.name(), item.name));
-                } else {
-                    ui.label(format!(
-                        "{} {} ({})",
-                        item.rarity.name(),
-                        item.name,
-                        item.count
-                    ));
-                }
+                ui.horizontal(|ui| {
+                    if item.count == 1 {
+                        ui.label(format!("{} {}", item.rarity.name(), item.name));
+                    } else {
+                        ui.label(format!(
+                            "{} {} ({})",
+                            item.rarity.name(),
+                            item.name,
+                            item.count
+                        ));
+                    }
+                    if person.is_player() {
+                        if let Some(slot) = item.slot {
+                            if ui.button("Equip").clicked() {
+                                *action = Some(Action::Send(Command::Equip {
+                                    item: item.name.clone(),
+                                    slot,
+                                }));
+                            }
+                        }
+                        if item
+                            .effects
+                            .iter()
+                            .any(|effect| effect.kind == EffectKind::Use)
+                            && ui.button("Use").clicked()
+                        {
+                            *action = Some(Action::Send(Command::Use {
+                                item: item.name.clone(),
+                            }));
+                        }
+                    }
+                });
+            }
+        }
+        if sheet.equipped.is_empty() {
+            ui.weak("Wearing nothing.");
+        } else {
+            ui.weak("Wearing:");
+            for worn in &sheet.equipped {
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} on the {}", worn.item.name, worn.slot.name()));
+                    if person.is_player() && ui.button("Unequip").clicked() {
+                        *action = Some(Action::Send(Command::Unequip { slot: worn.slot }));
+                    }
+                });
             }
         }
     }
@@ -1219,6 +1263,28 @@ fn describe(world: &World, event: &Event) -> String {
         Event::AttitudeChanged { person, index } => format!(
             "{}'s attitude toward the player is now {index}.",
             person_name(world, *person)
+        ),
+        Event::Equipped { person, item, slot } => format!(
+            "{} equips the {item} on the {slot}.",
+            person_name(world, *person)
+        ),
+        Event::Unequipped { person, item, slot } => format!(
+            "{} takes the {item} off the {slot} and puts it back in the pack.",
+            person_name(world, *person)
+        ),
+        Event::Used { person, item } => {
+            format!("{} uses the {item}.", person_name(world, *person))
+        }
+        Event::EffectFired {
+            person,
+            item,
+            kind,
+            payload,
+        } => format!(
+            "{}'s {item}, {}, {}.",
+            person_name(world, *person),
+            kind.name(),
+            payload.note()
         ),
         Event::PlaceAdded {
             place,
