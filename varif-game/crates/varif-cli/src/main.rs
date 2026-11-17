@@ -529,6 +529,12 @@ fn sheet(world: &World) {
         "  Health {}    Fatigue {}    Resilience {}",
         sheet.health, sheet.fatigue, sheet.resilience
     );
+    println!(
+        "  Vitality {}    Willpower {}    Fortitude {}",
+        sheet.vitality(),
+        sheet.willpower(),
+        sheet.fortitude()
+    );
     if sheet.inventory.is_empty() {
         println!("  Carrying nothing.");
     } else {
