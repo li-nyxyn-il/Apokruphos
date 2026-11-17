@@ -7,6 +7,7 @@ use crate::calendar::Date;
 use crate::character::{Character, SheetError};
 use crate::faction::Hostility;
 use crate::ids::PlaceId;
+use crate::npc::DialogueLine;
 use crate::rng::Rng;
 use crate::world::{Person, Place, Road, SiteKind, World};
 use serde::Deserialize;
@@ -21,6 +22,8 @@ struct WorldData {
     roads: Vec<RoadData>,
     #[serde(default)]
     people: Vec<PersonData>,
+    #[serde(default)]
+    dialogue: Vec<DialogueLine>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,22 +56,45 @@ struct PersonData {
     recruitable: bool,
     #[serde(default)]
     sheet: Option<Character>,
+    #[serde(default)]
+    dialogue: Vec<DialogueLine>,
 }
 
 /// What is wrong with a data file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataError {
     Parse(String),
-    BadStartDate { year: u32, month: u32, day: u32 },
+    BadStartDate {
+        year: u32,
+        month: u32,
+        day: u32,
+    },
     DuplicatePlace(String),
     DuplicatePerson(String),
-    UnknownPlace { key: String, used_by: String },
+    UnknownPlace {
+        key: String,
+        used_by: String,
+    },
     RoadToItself(String),
-    DuplicateRoad { from: String, to: String },
-    DuplicateSite { place: String, site: String },
+    DuplicateRoad {
+        from: String,
+        to: String,
+    },
+    DuplicateSite {
+        place: String,
+        site: String,
+    },
     NoGate(String),
-    BadSheet { person: String, error: SheetError },
+    BadSheet {
+        person: String,
+        error: SheetError,
+    },
     TwoPlayers,
+    /// A dialogue line has no words for the player to say. `owner` is the
+    /// person it belongs to, or "the general dialogue".
+    BlankDialogue {
+        owner: String,
+    },
 }
 
 impl fmt::Display for DataError {
@@ -100,6 +126,9 @@ impl fmt::Display for DataError {
                 write!(f, "{person}'s sheet is not valid: {error}")
             }
             DataError::TwoPlayers => write!(f, "two people are the player"),
+            DataError::BlankDialogue { owner } => {
+                write!(f, "a line in {owner} has nothing to say")
+            }
         }
     }
 }
@@ -179,6 +208,13 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         });
     }
 
+    let blank = |lines: &[DialogueLine]| lines.iter().any(|l| l.text.trim().is_empty());
+    if blank(&data.dialogue) {
+        return Err(DataError::BlankDialogue {
+            owner: "the general dialogue".to_string(),
+        });
+    }
+
     let mut people: Vec<Person> = Vec::new();
     let mut seen_player = false;
     for mut person in data.people {
@@ -204,6 +240,11 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
                 seen_player = true;
             }
         }
+        if blank(&person.dialogue) {
+            return Err(DataError::BlankDialogue {
+                owner: format!("{}'s dialogue", person.name),
+            });
+        }
         people.push(Person {
             key: person.key,
             name: person.name,
@@ -212,6 +253,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             in_party: person.in_party,
             recruitable: person.recruitable,
             sheet: person.sheet,
+            dialogue: person.dialogue,
         });
     }
 
@@ -228,5 +270,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         journey: None,
         nights_without_camp: 0,
         hostility: Hostility::starting(),
+        dialogue: data.dialogue,
+        conversation: None,
     })
 }

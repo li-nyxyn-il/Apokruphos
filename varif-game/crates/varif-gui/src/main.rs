@@ -567,8 +567,9 @@ impl App {
     fn play_screen(&mut self, ui: &mut egui::Ui) {
         let mut action: Option<Action> = None;
         // Between days on the road the world accepts only the answer to
-        // "make camp?", so everything else is greyed out.
-        let on_road = self.world.journey.is_some();
+        // "make camp?", and in a conversation only what is said, so
+        // everything else is greyed out.
+        let on_road = self.world.journey.is_some() || self.world.conversation.is_some();
 
         egui::Panel::top("top_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -658,8 +659,8 @@ impl App {
 }
 
 /// Whatever the window is waiting for the player to decide, shown under the
-/// map: whether to camp, whether to recruit someone, which way to take, or
-/// whether to walk the next leg.
+/// map: whether to camp, what to say in a conversation, whether to recruit
+/// someone, which way to take, or whether to walk the next leg.
 fn question(
     ui: &mut egui::Ui,
     world: &World,
@@ -695,6 +696,32 @@ fn question(
                         *action = Some(Action::Send(Command::EndDay { camp: false }));
                     }
                 });
+            }
+        });
+    } else if let Some(person) = world.conversation {
+        ui.group(|ui| {
+            let name = world.person(person).map_or("Someone", |p| p.name.as_str());
+            match world.standing(person) {
+                Some(standing) => ui.strong(format!(
+                    "Talking with {name} (friendliness {}).",
+                    standing.friendliness
+                )),
+                None => ui.strong(format!("Talking with {name}.")),
+            };
+            let options = world.dialogue_options(person);
+            if options.is_empty() {
+                ui.weak("There is nothing to say.");
+            }
+            for (index, line) in options.iter().enumerate() {
+                let button = ui
+                    .button(format!("\"{}\"", line.text))
+                    .on_hover_text(line.bucket.name());
+                if button.clicked() {
+                    *action = Some(Action::Send(Command::Say { line: index }));
+                }
+            }
+            if ui.button("Leave").clicked() {
+                *action = Some(Action::Send(Command::EndConversation));
             }
         });
     } else if let Some(&person) = offers.first() {
@@ -780,11 +807,43 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
         }
     }
 
-    let mut residents = world.residents(here).peekable();
-    if residents.peek().is_some() {
+    let nearby = world.nearby_npcs();
+    if !nearby.is_empty() {
+        ui.separator();
+        ui.strong("Nearby");
+        for id in nearby {
+            let Some(person) = world.person(id) else {
+                continue;
+            };
+            ui.horizontal(|ui| {
+                let follower = if person.is_follower() {
+                    ", follower"
+                } else {
+                    ""
+                };
+                ui.label(format!("{} ({}{follower})", person.name, person.title));
+                if ui.button("Interact").clicked() {
+                    *action = Some(Action::Send(Command::Interact { person: id }));
+                }
+            });
+            if let Some(standing) = world.standing(id) {
+                if standing.will_talk() {
+                    ui.weak(format!("Friendliness {}", standing.friendliness));
+                } else {
+                    ui.weak("Hostile");
+                }
+            }
+        }
+    }
+    // People named only as cast have no sheet, so they cannot be talked to.
+    let mut cast = world
+        .residents(here)
+        .filter(|p| p.sheet.is_none())
+        .peekable();
+    if cast.peek().is_some() {
         ui.separator();
         ui.strong("Here");
-        for person in residents {
+        for person in cast {
             ui.label(format!("{} ({})", person.name, person.title));
         }
     }
@@ -1246,6 +1305,32 @@ fn describe(world: &World, event: &Event) -> String {
         Event::JournalWritten { .. } => "The entry is written.".to_string(),
         Event::RecruitOffered { person, .. } => format!(
             "{} is here, and could join the party.",
+            person_name(world, *person)
+        ),
+        Event::ConversationOpened { person, standing } => format!(
+            "You speak with {} (friendliness {}).",
+            person_name(world, *person),
+            standing.friendliness
+        ),
+        Event::Said {
+            person,
+            text,
+            reply,
+        } => {
+            if reply.trim().is_empty() {
+                format!("You: \"{text}\"  {} says nothing.", person_name(world, *person))
+            } else {
+                format!("You: \"{text}\"  {}: \"{reply}\"", person_name(world, *person))
+            }
+        }
+        Event::ConversationEnded { person } => {
+            format!("You leave {}.", person_name(world, *person))
+        }
+        Event::TooHostileToTalk {
+            person,
+            friendliness,
+        } => format!(
+            "{} is too hostile to talk to (friendliness {friendliness}). Combat would start here, but it is not built yet.",
             person_name(world, *person)
         ),
         Event::Recruited { person, .. } => {

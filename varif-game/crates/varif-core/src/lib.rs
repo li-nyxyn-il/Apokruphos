@@ -14,6 +14,7 @@ pub mod command;
 pub mod data;
 pub mod faction;
 pub mod ids;
+pub mod npc;
 pub mod rng;
 pub mod world;
 
@@ -28,6 +29,7 @@ pub use command::{Command, CommandError, Event, MemberFatigue};
 pub use data::{load_world, DataError};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};
+pub use npc::{friendliness, Band, Bucket, DialogueLine, Standing, MIN_FRIENDLINESS_TO_TALK};
 pub use rng::Rng;
 pub use world::{
     Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site,

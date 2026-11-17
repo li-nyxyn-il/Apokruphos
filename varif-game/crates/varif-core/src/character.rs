@@ -235,8 +235,8 @@ pub enum Role {
     Player,
     /// `follower` is true once this NPC travels in the player's service.
     /// `attitude` is their personal stance toward the player, from 0 to 100.
-    /// Nothing reads it yet: together with faction hostility, it will decide
-    /// whether this NPC is hostile.
+    /// Together with their faction's hostility index it gives their
+    /// friendliness; see [`crate::npc`].
     Npc {
         follower: bool,
         #[serde(default = "base_attitude")]
