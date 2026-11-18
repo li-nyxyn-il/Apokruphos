@@ -3,6 +3,10 @@
 //! Run it from the workspace folder with `cargo run -p varif-gui`, or pass a
 //! data file: `cargo run -p varif-gui -- data/first_leg.ron`.
 //!
+//! The same window also runs in a web browser: see `index.html` and the
+//! README for the web build. There the data file is built in and saves go to
+//! the browser's own storage instead of to files.
+//!
 //! The window opens on a choice: start a new game, or load a save. A new game
 //! asks for a character before the map is shown.
 //!
@@ -11,24 +15,28 @@
 //! once drawing is done. The window keeps no copy of the world's state.
 
 mod layout;
+mod storage;
 
 use eframe::egui;
 use layout::MapLayout;
-use std::path::Path;
-use std::{env, fs, process};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{env, fs, path::Path, process};
 use varif_core::{
     load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
     MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
     BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_DATA: &str = "data/first_leg.ron";
 /// Looked for beside the data file.
+#[cfg(not(target_arch = "wasm32"))]
 const LAYOUT_FILE: &str = "map_layout.ron";
 /// A map with many loops has hundreds of ways between two places. Only this
 /// many, the quickest, are offered.
 const MAX_WAYS: usize = 5;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
     let path = env::args()
         .nth(1)
@@ -61,6 +69,61 @@ fn main() -> eframe::Result {
     )
 }
 
+/// The web build: a browser page has no files to read, so the data and the
+/// layout are built into the program, and the window draws into the canvas
+/// that `index.html` provides.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    const WEB_DATA: &str = include_str!("../../../data/first_leg.ron");
+    const WEB_LAYOUT: &str = include_str!("../../../data/map_layout.ron");
+
+    // Panics show up in the browser's console instead of vanishing.
+    std::panic::set_hook(Box::new(|info| {
+        eframe::web_sys::console::error_1(&info.to_string().into());
+    }));
+
+    let world = load_world(WEB_DATA).expect("the built-in data file should load");
+    let (layout, layout_note) = match MapLayout::from_text(WEB_LAYOUT) {
+        Ok(layout) => (layout, None),
+        Err(error) => (
+            MapLayout::default(),
+            Some(format!("Could not read the built-in map layout: {error}")),
+        ),
+    };
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let document = eframe::web_sys::window()
+            .and_then(|window| window.document())
+            .expect("the page should have a document");
+        let canvas = document
+            .get_element_by_id("varif_canvas")
+            .expect("index.html should have a canvas called varif_canvas")
+            .dyn_into::<eframe::web_sys::HtmlCanvasElement>()
+            .expect("varif_canvas should be a canvas");
+
+        let started = eframe::WebRunner::new()
+            .start(
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(move |_creation| Ok(Box::new(App::new(world, layout, layout_note)))),
+            )
+            .await;
+
+        // Swap the "Loading" text for the window, or for what went wrong.
+        if let Some(loading) = document.get_element_by_id("loading") {
+            match started {
+                Ok(()) => loading.remove(),
+                Err(error) => loading.set_inner_html(&format!(
+                    "<p>Varif could not start in this browser.</p><p>{error:?}</p>"
+                )),
+            }
+        }
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn read_data(path: &str) -> Result<World, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
     load_world(&text).map_err(|e| e.to_string())
@@ -327,7 +390,7 @@ impl App {
         let result = self
             .world
             .to_ron()
-            .and_then(|text| fs::write(&self.save_path, text).map_err(|e| e.to_string()));
+            .and_then(|text| storage::write(&self.save_path, &text));
         self.status = match result {
             Ok(()) => format!("Saved to {}.", self.save_path),
             Err(error) => format!("Could not save: {error}"),
@@ -336,9 +399,7 @@ impl App {
 
     /// Reads a save into the window. True when the file loaded.
     fn load(&mut self) -> bool {
-        let result = fs::read_to_string(&self.save_path)
-            .map_err(|e| e.to_string())
-            .and_then(|text| World::from_ron(&text));
+        let result = storage::read(&self.save_path).and_then(|text| World::from_ron(&text));
         match result {
             Ok(world) => {
                 self.world = world;
