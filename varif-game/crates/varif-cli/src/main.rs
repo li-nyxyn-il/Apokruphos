@@ -26,6 +26,11 @@ Commands:
                   then whether to sleep (y/n);
                   when someone where you arrive could join the party, you
                   are asked whether to recruit them (y/n)
+  nearby          list the NPCs where the player is, followers too
+  interact <npc>  talk to a nearby NPC, by key, by name, or by its number
+                  from nearby; pick a line by number, or bye to leave.
+                  One too hostile to talk to would start combat instead,
+                  which is not built yet
   map             list every place the roads can take the party to
   walk            list the places inside the city the party can walk to
   walk <site>     walk to one of them, by key or by name
@@ -94,6 +99,14 @@ fn main() {
         }
 
         match &asking {
+            _ if world.conversation.is_some() => {
+                let options = world.dialogue_options(world.conversation.unwrap()).len();
+                if options == 0 {
+                    print!("Nothing to say. (bye to leave) ");
+                } else {
+                    print!("Say which? (1-{options}, or bye) ");
+                }
+            }
             // Between days on the road the question is camp, or sleep once camped.
             _ if world.journey.is_some() && world.camped => print!("Sleep in camp? (y/n) "),
             _ if world.journey.is_some() => print!("Make camp for the night? (y/n) "),
@@ -123,6 +136,23 @@ fn main() {
         let answer = line.to_lowercase();
         if answer == "quit" || answer == "exit" {
             break;
+        }
+
+        if let Some(person) = world.conversation {
+            match answer.as_str() {
+                "bye" | "leave" | "n" | "no" => {
+                    run(&mut world, Command::EndConversation);
+                }
+                _ => match answer.parse::<usize>() {
+                    Ok(n) if n >= 1 && n <= world.dialogue_options(person).len() => {
+                        if run(&mut world, Command::Say { line: n - 1 }) {
+                            show_options(&world, person);
+                        }
+                    }
+                    _ => println!("Answer with the number of a line, or bye to leave."),
+                },
+            }
+            continue;
         }
 
         if world.journey.is_some() {
@@ -216,6 +246,8 @@ fn main() {
             "quit" | "exit" => break,
             "help" => println!("{HELP}"),
             "look" => look(&world),
+            "nearby" => nearby(&world),
+            "interact" | "talk" => interact(&mut world, rest),
             "sheet" => sheet(&world),
             "journal" => journal(&world),
             "map" => map(&world),
@@ -485,6 +517,34 @@ fn describe(world: &World, event: &Event) -> String {
         Event::Recruited { person, .. } => {
             format!("{} joins the party.", person_name(world, *person))
         }
+        Event::ConversationOpened { person, standing } => format!(
+            "You speak with {} (friendliness {}).",
+            person_name(world, *person),
+            standing.friendliness
+        ),
+        Event::Said {
+            person,
+            text,
+            reply,
+        } => {
+            if reply.trim().is_empty() {
+                format!("You: \"{text}\"
+{} says nothing.", person_name(world, *person))
+            } else {
+                format!("You: \"{text}\"
+{}: \"{reply}\"", person_name(world, *person))
+            }
+        }
+        Event::ConversationEnded { person } => {
+            format!("You leave {}.", person_name(world, *person))
+        }
+        Event::TooHostileToTalk {
+            person,
+            friendliness,
+        } => format!(
+            "{} is too hostile to talk to (friendliness {friendliness}). Combat would start here, but it is not built yet.",
+            person_name(world, *person)
+        ),
         Event::HostilityChanged {
             from,
             toward,
@@ -673,6 +733,9 @@ fn look(world: &World) {
     for person in world.residents(here) {
         println!("  {} ({}) is here.", person.name, person.title);
     }
+    if !world.nearby_npcs().is_empty() {
+        println!("  Type nearby to see who you can interact with.");
+    }
     if world.camped {
         println!("  The party is camped.");
     }
@@ -853,4 +916,69 @@ fn fatigue_note(world: &World, fatigue: &[MemberFatigue]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(" Fatigue: {parts}.")
+}
+
+/// Lists the NPCs where the player is, numbered for `interact`.
+fn nearby(world: &World) {
+    let people = world.nearby_npcs();
+    if people.is_empty() {
+        println!("No one is nearby.");
+        return;
+    }
+    println!("Nearby:");
+    for (i, &id) in people.iter().enumerate() {
+        let Some(person) = world.person(id) else {
+            continue;
+        };
+        let follower = if person.is_follower() {
+            ", follower"
+        } else {
+            ""
+        };
+        let mood = match world.standing(id) {
+            Some(s) if !s.will_talk() => " - hostile".to_string(),
+            Some(s) => format!(" - friendliness {}", s.friendliness),
+            None => String::new(),
+        };
+        println!(
+            "  {}. {} ({}{follower}) [{}]{mood}",
+            i + 1,
+            person.name,
+            person.title,
+            person.key
+        );
+    }
+}
+
+/// Handles "interact <npc>": finds them among the nearby NPCs by number, key
+/// or name, and opens the conversation.
+fn interact(world: &mut World, rest: &str) {
+    let people = world.nearby_npcs();
+    if rest.is_empty() {
+        println!("Interact with whom? Type nearby for the list.");
+        return;
+    }
+    let wanted = rest.to_lowercase();
+    let found = match wanted.parse::<usize>() {
+        Ok(n) if (1..=people.len()).contains(&n) => Some(people[n - 1]),
+        _ => people.iter().copied().find(|&id| {
+            world
+                .person(id)
+                .is_some_and(|p| p.key.to_lowercase() == wanted || p.name.to_lowercase() == wanted)
+        }),
+    };
+    let Some(person) = found else {
+        println!("No one called \"{rest}\" is nearby.");
+        return;
+    };
+    if run(world, Command::Interact { person }) && world.conversation == Some(person) {
+        show_options(world, person);
+    }
+}
+
+/// Prints the lines the player can say to `person` right now, numbered.
+fn show_options(world: &World, person: PersonId) {
+    for (i, line) in world.dialogue_options(person).iter().enumerate() {
+        println!("  {}. \"{}\"  [{}]", i + 1, line.text, line.bucket.name());
+    }
 }

@@ -4,6 +4,7 @@ use crate::calendar::Date;
 use crate::character::Character;
 use crate::faction::{FactionId, Hostility};
 use crate::ids::{PersonId, PlaceId, SiteId};
+use crate::npc::{DialogueLine, Standing};
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -203,6 +204,9 @@ pub struct Person {
     /// The shared character sheet. A person named only as cast leaves it empty.
     #[serde(default)]
     pub sheet: Option<Character>,
+    /// Lines only this person has, on top of the world's general dialogue.
+    #[serde(default)]
+    pub dialogue: Vec<DialogueLine>,
 }
 
 impl Person {
@@ -296,6 +300,13 @@ pub struct World {
     /// numbers change with the world.
     #[serde(default)]
     pub hostility: Hostility,
+    /// Lines any NPC can be offered, when the bucket the line needs is open.
+    #[serde(default)]
+    pub dialogue: Vec<DialogueLine>,
+    /// The NPC the player is talking to. While it is `Some`, the world waits
+    /// for something to be said or for the conversation to end.
+    #[serde(default)]
+    pub conversation: Option<PersonId>,
 }
 
 impl World {
@@ -477,6 +488,45 @@ impl World {
             .enumerate()
             .filter(|(_, p)| p.recruitable && !p.in_party && p.at == self.party_at)
             .map(|(i, _)| PersonId(i as u32))
+            .collect()
+    }
+
+    /// The NPCs where the player is, followers included, in the order of the
+    /// people table. Someone without a sheet is cast only and is left out.
+    pub fn nearby_npcs(&self) -> Vec<PersonId> {
+        let Some(player) = self.player() else {
+            return Vec::new();
+        };
+        let here = player.at;
+        self.people
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.at == here && p.sheet.as_ref().is_some_and(|s| !s.role.is_player()))
+            .map(|(i, _)| PersonId(i as u32))
+            .collect()
+    }
+
+    /// Where an NPC stands toward the player: their attitude, their primary
+    /// faction's hostility index toward the player, and the friendliness of
+    /// the two. `None` for the player and for someone without a sheet.
+    pub fn standing(&self, id: PersonId) -> Option<Standing> {
+        let sheet = self.person(id)?.sheet.as_ref()?;
+        let attitude = sheet.role.attitude()?;
+        let hostility = self.hostility_toward(sheet.primary, FactionId::Player);
+        Some(Standing::new(attitude, hostility, sheet.role.is_follower()))
+    }
+
+    /// What the player can say to an NPC right now: the general lines, then
+    /// the NPC's own, keeping only those whose bucket is open to them.
+    pub fn dialogue_options(&self, id: PersonId) -> Vec<&DialogueLine> {
+        let (Some(person), Some(standing)) = (self.person(id), self.standing(id)) else {
+            return Vec::new();
+        };
+        let open = standing.buckets();
+        self.dialogue
+            .iter()
+            .chain(&person.dialogue)
+            .filter(|line| open.contains(&line.bucket))
             .collect()
     }
 

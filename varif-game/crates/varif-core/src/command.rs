@@ -7,6 +7,7 @@ use crate::character::{
 };
 use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
+use crate::npc::Standing;
 use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -111,6 +112,14 @@ pub enum Command {
     /// Fire the use effects of an item in the player's pack. The item stays
     /// in the pack. Consumed effects do not fire.
     Use { item: String },
+    /// Interact with an NPC where the player is. One friendly enough opens a
+    /// conversation; one too hostile to talk to starts combat instead.
+    Interact { person: PersonId },
+    /// Say one of the lines on offer, by its place in
+    /// [`World::dialogue_options`].
+    Say { line: usize },
+    /// Leave the conversation.
+    EndConversation,
 }
 
 /// Something that happened in the world as the result of a command.
@@ -262,6 +271,29 @@ pub enum Event {
         kind: EffectKind,
         payload: EffectPayload,
     },
+    /// A conversation began. While it lasts, only [`Command::Say`] and
+    /// [`Command::EndConversation`] are accepted.
+    ConversationOpened {
+        person: PersonId,
+        standing: Standing,
+    },
+    /// The player said a line, and the NPC answered with `reply`, which may be
+    /// blank.
+    Said {
+        person: PersonId,
+        text: String,
+        reply: String,
+    },
+    ConversationEnded {
+        person: PersonId,
+    },
+    /// The NPC is too hostile to talk to, so interacting with them starts
+    /// combat. COMBAT: combat is its own system and is not built yet, so for
+    /// now this event is all that happens and the world does not change.
+    TooHostileToTalk {
+        person: PersonId,
+        friendliness: u32,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -323,6 +355,14 @@ pub enum CommandError {
     SlotTaken(EquipSlot),
     /// The slot is empty.
     SlotEmpty(EquipSlot),
+    /// Only an NPC can be talked to.
+    NotAnNpc,
+    /// A conversation is under way and must be ended first.
+    InConversation,
+    /// There is no conversation to say anything in.
+    NotInConversation,
+    /// No line on offer has this number.
+    UnknownLine(usize),
 }
 
 /// One party member's fatigue after a night that changed it.
@@ -390,6 +430,15 @@ impl fmt::Display for CommandError {
             }
             CommandError::SlotTaken(slot) => write!(f, "the {slot} already holds an item"),
             CommandError::SlotEmpty(slot) => write!(f, "nothing is worn on the {slot}"),
+            CommandError::NotAnNpc => write!(f, "only an NPC can be talked to"),
+            CommandError::InConversation => {
+                write!(
+                    f,
+                    "the player is talking and must end the conversation first"
+                )
+            }
+            CommandError::NotInConversation => write!(f, "the player is not talking to anyone"),
+            CommandError::UnknownLine(n) => write!(f, "there is no line {n} to say"),
         }
     }
 }
@@ -402,6 +451,11 @@ impl World {
     /// Every command is checked in full before anything changes, so an `Err`
     /// always leaves the world exactly as it was.
     pub fn apply(&mut self, command: Command) -> Result<Vec<Event>, CommandError> {
+        if self.conversation.is_some()
+            && !matches!(command, Command::Say { .. } | Command::EndConversation)
+        {
+            return Err(CommandError::InConversation);
+        }
         if self.journey.is_some()
             && !matches!(
                 command,
@@ -438,6 +492,9 @@ impl World {
             Command::Equip { item, slot } => self.equip(item, slot),
             Command::Unequip { slot } => self.unequip(slot),
             Command::Use { item } => self.use_item(item),
+            Command::Interact { person } => self.interact(person),
+            Command::Say { line } => self.say(line),
+            Command::EndConversation => self.end_conversation(),
         }
     }
 
@@ -481,6 +538,51 @@ impl World {
             attitude: index,
         };
         Ok(vec![Event::AttitudeChanged { person: id, index }])
+    }
+
+    fn interact(&mut self, id: PersonId) -> Result<Vec<Event>, CommandError> {
+        let person = self.person(id).ok_or(CommandError::UnknownPerson(id))?;
+        if person.is_player() {
+            return Err(CommandError::NotAnNpc);
+        }
+        let standing = self.standing(id).ok_or(CommandError::NotAnNpc)?;
+        if !self.nearby_npcs().contains(&id) {
+            return Err(CommandError::NotHere);
+        }
+        if !standing.will_talk() {
+            // COMBAT: start combat with this NPC here.
+            return Ok(vec![Event::TooHostileToTalk {
+                person: id,
+                friendliness: standing.friendliness,
+            }]);
+        }
+        self.conversation = Some(id);
+        Ok(vec![Event::ConversationOpened {
+            person: id,
+            standing,
+        }])
+    }
+
+    fn say(&mut self, line: usize) -> Result<Vec<Event>, CommandError> {
+        let person = self.conversation.ok_or(CommandError::NotInConversation)?;
+        let said = self
+            .dialogue_options(person)
+            .get(line)
+            .map(|l| (l.text.clone(), l.reply.clone()))
+            .ok_or(CommandError::UnknownLine(line))?;
+        Ok(vec![Event::Said {
+            person,
+            text: said.0,
+            reply: said.1,
+        }])
+    }
+
+    fn end_conversation(&mut self) -> Result<Vec<Event>, CommandError> {
+        let person = self
+            .conversation
+            .take()
+            .ok_or(CommandError::NotInConversation)?;
+        Ok(vec![Event::ConversationEnded { person }])
     }
 
     fn recruit(&mut self, id: PersonId) -> Result<Vec<Event>, CommandError> {

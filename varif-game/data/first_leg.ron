@@ -634,6 +634,32 @@
                 background: "Kraiark of the Krypt of Grymsiere",
                 primary: Ecumenci,
             ),
+            // Lines only Jonnoj has, on top of the general dialogue below.
+            dialogue: [
+                (
+                    bucket: Attitude(Average),
+                    text: "What does a Kraiark do in Yhlgrym?",
+                    reply: "Keeps the Krypt, and keeps an eye on pylgryms like you.",
+                ),
+            ],
         ),
+    ],
+
+    // Lines any NPC can be offered. Each needs one bucket open: friendliness,
+    // the hostility index of the NPC's faction toward the player, or their
+    // attitude, each low (0-30), average (31-70) or high (71-100), or the
+    // follower bucket. An NPC below 10 friendliness will not talk at all.
+    // ASSUMPTION: every line here is a template to be rewritten.
+    dialogue: [
+        (bucket: Friendliness(Low), text: "I mean you no harm.", reply: "Say what you want and go."),
+        (bucket: Friendliness(Average), text: "Good day to you.", reply: "And to you, pylgrym."),
+        (bucket: Friendliness(High), text: "It is good to see you.", reply: "Always, friend. Sit a while."),
+        (bucket: Hostility(Low), text: "Your people and mine need not quarrel.", reply: "Tell that to my people."),
+        (bucket: Hostility(Average), text: "What news from your people?", reply: "Nothing a stranger needs to hear."),
+        (bucket: Hostility(High), text: "Your people have always been good to pylgryms.", reply: "We keep the old courtesies."),
+        (bucket: Attitude(Low), text: "Have I wronged you?", reply: "You are here. That is enough."),
+        (bucket: Attitude(Average), text: "Do you know the road ahead?", reply: "Well enough to walk it."),
+        (bucket: Attitude(High), text: "Will you tell me about yourself?", reply: "For you, gladly."),
+        (bucket: Follower, text: "How are you holding up?", reply: "I will keep pace. Lead on."),
     ],
 )
