@@ -1,0 +1,74 @@
+# Builds the Varif window for the web and publishes it to GitHub Pages on
+# every push to main, so the latest build can be opened from a phone at
+# https://li-nyxyn-il.github.io/Apokruphos/
+#
+# One-time setup: in the repository's Settings > Pages, set Source to
+# "GitHub Actions".
+name: Web build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "varif-game/**"
+      - ".github/workflows/web.yml"
+  # Lets you publish by hand from the Actions tab too.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one publish at a time. A newer push waits rather than cancelling one
+# that is halfway through publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: trunk build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: varif-game/crates/varif-gui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: varif-game
+          key: web
+
+      # Trunk builds the crate for the browser and fetches the matching
+      # wasm-bindgen and wasm-opt itself.
+      - name: Install Trunk
+        run: |
+          curl -sSL https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin
+
+      # Tells the build which path the site is served from (/Apokruphos/).
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        run: trunk build --release --public-url "${{ steps.pages.outputs.base_path }}/"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: varif-game/crates/varif-gui/dist
+
+  deploy:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

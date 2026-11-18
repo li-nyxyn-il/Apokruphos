@@ -3,6 +3,14 @@
 //! Run it from the workspace folder with `cargo run -p varif-gui`, or pass a
 //! data file: `cargo run -p varif-gui -- data/first_leg.ron`.
 //!
+//! The same window also runs in a web browser: see `index.html` and the
+//! README for the web build. There the data file is built in and saves go to
+//! the browser's own storage instead of to files.
+//!
+//! On a narrow screen (a phone, or a thin window) the play screen shows one
+//! panel at a time, with tabs along the bottom: map, place, party, events.
+//! On a touch screen the buttons are also made bigger, to fit a finger.
+//!
 //! The window opens on a choice: start a new game, or load a save. A new game
 //! asks for a character before the map is shown.
 //!
@@ -11,24 +19,33 @@
 //! once drawing is done. The window keeps no copy of the world's state.
 
 mod layout;
+mod storage;
 
 use eframe::egui;
 use layout::MapLayout;
-use std::path::Path;
-use std::{env, fs, process};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{env, fs, path::Path, process};
 use varif_core::{
     load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
     MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
     BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_DATA: &str = "data/first_leg.ron";
 /// Looked for beside the data file.
+#[cfg(not(target_arch = "wasm32"))]
 const LAYOUT_FILE: &str = "map_layout.ron";
 /// A map with many loops has hundreds of ways between two places. Only this
 /// many, the quickest, are offered.
 const MAX_WAYS: usize = 5;
+/// Narrower than this, in egui points, and the play screen shows one panel
+/// at a time instead of three side by side.
+const COMPACT_WIDTH: f32 = 760.0;
+/// How many of the latest events are shown under the map on a narrow screen.
+const EVENTS_UNDER_MAP: usize = 3;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
     let path = env::args()
         .nth(1)
@@ -61,6 +78,72 @@ fn main() -> eframe::Result {
     )
 }
 
+/// The web build: a browser page has no files to read, so the data and the
+/// layout are built into the program, and the window draws into the canvas
+/// that `index.html` provides.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    const WEB_DATA: &str = include_str!("../../../data/first_leg.ron");
+    const WEB_LAYOUT: &str = include_str!("../../../data/map_layout.ron");
+
+    // Panics show up in the browser's console instead of vanishing.
+    std::panic::set_hook(Box::new(|info| {
+        eframe::web_sys::console::error_1(&info.to_string().into());
+    }));
+
+    let world = load_world(WEB_DATA).expect("the built-in data file should load");
+    let (layout, layout_note) = match MapLayout::from_text(WEB_LAYOUT) {
+        Ok(layout) => (layout, None),
+        Err(error) => (
+            MapLayout::default(),
+            Some(format!("Could not read the built-in map layout: {error}")),
+        ),
+    };
+
+    // A phone or tablet says it has touch points. Knowing this from the start
+    // means the bigger buttons are there before the first tap, rather than
+    // the layout jumping under the player's finger.
+    let touch = eframe::web_sys::window()
+        .map(|window| window.navigator().max_touch_points() > 0)
+        .unwrap_or(false);
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let document = eframe::web_sys::window()
+            .and_then(|window| window.document())
+            .expect("the page should have a document");
+        let canvas = document
+            .get_element_by_id("varif_canvas")
+            .expect("index.html should have a canvas called varif_canvas")
+            .dyn_into::<eframe::web_sys::HtmlCanvasElement>()
+            .expect("varif_canvas should be a canvas");
+
+        let started = eframe::WebRunner::new()
+            .start(
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(move |_creation| {
+                    let mut app = App::new(world, layout, layout_note);
+                    app.touch = touch;
+                    Ok(Box::new(app))
+                }),
+            )
+            .await;
+
+        // Swap the "Loading" text for the window, or for what went wrong.
+        if let Some(loading) = document.get_element_by_id("loading") {
+            match started {
+                Ok(()) => loading.remove(),
+                Err(error) => loading.set_inner_html(&format!(
+                    "<p>Varif could not start in this browser.</p><p>{error:?}</p>"
+                )),
+            }
+        }
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn read_data(path: &str) -> Result<World, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
     load_world(&text).map_err(|e| e.to_string())
@@ -179,6 +262,35 @@ struct App {
     save_path: String,
     /// The result of the last save or load.
     status: String,
+    /// Which panel a narrow screen is showing.
+    tab: Tab,
+    /// True on a touch screen. Set at start-up on the web; otherwise turned
+    /// on by the first touch.
+    touch: bool,
+    /// Whether the bigger touch style has been put in place yet.
+    touch_styled: bool,
+}
+
+/// The panels a narrow screen switches between.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Map,
+    Place,
+    Party,
+    Events,
+}
+
+impl Tab {
+    const ALL: [Tab; 4] = [Tab::Map, Tab::Place, Tab::Party, Tab::Events];
+
+    fn name(self) -> &'static str {
+        match self {
+            Tab::Map => "Map",
+            Tab::Place => "Place",
+            Tab::Party => "Party",
+            Tab::Events => "Events",
+        }
+    }
 }
 
 impl App {
@@ -199,6 +311,9 @@ impl App {
             new_leagues: 3,
             save_path: "save.ron".to_string(),
             status: String::new(),
+            tab: Tab::Map,
+            touch: false,
+            touch_styled: false,
         }
     }
 
@@ -327,7 +442,7 @@ impl App {
         let result = self
             .world
             .to_ron()
-            .and_then(|text| fs::write(&self.save_path, text).map_err(|e| e.to_string()));
+            .and_then(|text| storage::write(&self.save_path, &text));
         self.status = match result {
             Ok(()) => format!("Saved to {}.", self.save_path),
             Err(error) => format!("Could not save: {error}"),
@@ -336,9 +451,7 @@ impl App {
 
     /// Reads a save into the window. True when the file loaded.
     fn load(&mut self) -> bool {
-        let result = fs::read_to_string(&self.save_path)
-            .map_err(|e| e.to_string())
-            .and_then(|text| World::from_ron(&text));
+        let result = storage::read(&self.save_path).and_then(|text| World::from_ron(&text));
         match result {
             Ok(world) => {
                 self.world = world;
@@ -401,7 +514,8 @@ impl App {
         let load_open = matches!(self.stage, Stage::Title { load_open: true });
         egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(120.0);
+                // Less room above the title on a short screen.
+                ui.add_space((ui.available_height() * 0.15).min(120.0));
                 ui.heading("Varif");
                 ui.label("The Pylgrymage");
                 ui.add_space(28.0);
@@ -425,7 +539,10 @@ impl App {
                 }
                 if load_open {
                     ui.add_space(12.0);
-                    ui.add(egui::TextEdit::singleline(&mut self.save_path).desired_width(220.0));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.save_path)
+                            .desired_width(ui.available_width().min(220.0)),
+                    );
                     ui.add_space(8.0);
                     if ui
                         .add_sized([220.0, 32.0], egui::Button::new("Load"))
@@ -468,7 +585,10 @@ impl App {
             egui::ScrollArea::vertical().id_salt("create").show(ui, |ui| {
                 ui.set_max_width(460.0);
                 ui.label("Name");
-                ui.add(egui::TextEdit::singleline(&mut self.creator.name).desired_width(280.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.creator.name)
+                        .desired_width(ui.available_width().min(280.0)),
+                );
                 ui.add_space(8.0);
                 ui.label("Age");
                 ui.add(egui::Slider::new(&mut self.creator.age, MIN_AGE..=MAX_AGE).text("years"));
@@ -505,7 +625,7 @@ impl App {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.creator.background)
                         .desired_rows(3)
-                        .desired_width(360.0),
+                        .desired_width(ui.available_width().min(360.0)),
                 );
                 choice(ui, "primary_faction", "Primary faction", self.creator.primary.name(), |ui| {
                     for faction in FactionId::ALL {
@@ -538,6 +658,23 @@ impl App {
     }
 }
 
+/// Bigger buttons, more space between them and slightly larger text, so that
+/// a finger can hit what it means to.
+fn touch_style(style: &mut egui::Style) {
+    style.spacing.interact_size.y = style.spacing.interact_size.y.max(36.0);
+    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.item_spacing = egui::vec2(10.0, 10.0);
+    style.spacing.combo_width = style.spacing.combo_width.max(200.0);
+    for font in style.text_styles.values_mut() {
+        font.size += 2.0;
+    }
+}
+
+/// True when the screen is too narrow for three panels side by side.
+fn is_compact(ui: &egui::Ui) -> bool {
+    ui.ctx().content_rect().width() < COMPACT_WIDTH
+}
+
 fn choice(
     ui: &mut egui::Ui,
     salt: &str,
@@ -555,6 +692,13 @@ fn choice(
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if !self.touch && ui.ctx().input(|i| i.has_touch_screen()) {
+            self.touch = true;
+        }
+        if self.touch && !self.touch_styled {
+            ui.ctx().all_styles_mut(touch_style);
+            self.touch_styled = true;
+        }
         match self.stage {
             Stage::Title { .. } => self.title_screen(ui),
             Stage::Create => self.create_screen(ui),
@@ -564,97 +708,207 @@ impl eframe::App for App {
 }
 
 impl App {
+    /// True while the world accepts only the question under the map: the
+    /// answer to "make camp?", or what is said in a conversation. Everything
+    /// else is greyed out.
+    fn world_locked(&self) -> bool {
+        self.world.journey.is_some() || self.world.conversation.is_some()
+    }
+
     fn play_screen(&mut self, ui: &mut egui::Ui) {
         let mut action: Option<Action> = None;
-        // Between days on the road the world accepts only the answer to
-        // "make camp?", and in a conversation only what is said, so
-        // everything else is greyed out.
-        let on_road = self.world.journey.is_some() || self.world.conversation.is_some();
+        if is_compact(ui) {
+            self.play_compact(ui, &mut action);
+        } else {
+            self.play_wide(ui, &mut action);
+        }
+        if let Some(action) = action {
+            self.carry_out(action);
+        }
+    }
 
+    /// The desktop layout: places on the left, the party on the right, and
+    /// the map, questions and events in the middle.
+    fn play_wide(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
         egui::Panel::top("top_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading(self.world.date.to_string());
                 ui.separator();
-                ui.label("Save file:");
-                ui.add(egui::TextEdit::singleline(&mut self.save_path).desired_width(160.0));
-                if ui.button("Save").clicked() {
-                    action = Some(Action::Save);
-                }
-                if ui.button("Load").clicked() {
-                    action = Some(Action::Load);
-                }
+                self.save_controls(ui, action);
                 ui.label(&self.status);
             });
         });
 
         egui::Panel::left("place_panel")
             .default_size(280.0)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("place_scroll")
-                    .show(ui, |ui| {
-                        ui.add_enabled_ui(!on_road, |ui| {
-                            place_panel(ui, &self.world, &mut action);
-                            ui.separator();
-                            ui.strong("Add a place");
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.new_place).hint_text("Name"),
-                            );
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut self.new_leagues)
-                                        .range(1..=500)
-                                        .suffix(" leagues"),
-                                );
-                                let named = !self.new_place.trim().is_empty();
-                                if ui.add_enabled(named, egui::Button::new("Add")).clicked() {
-                                    action = Some(Action::AddPlace);
-                                }
-                            });
-                            ui.weak("Joined by a new road to where the party stands.");
-                        });
-                    });
-            });
+            .show(ui, |ui| self.places(ui, action));
 
         egui::Panel::right("party_panel")
             .default_size(300.0)
             .show(ui, |ui| {
-                ui.add_enabled_ui(!on_road, |ui| {
-                    party_panel(ui, &self.world, &mut self.draft, &mut action);
+                ui.add_enabled_ui(!self.world_locked(), |ui| {
+                    party_panel(ui, &self.world, &mut self.draft, action);
                 });
             });
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("Map");
             let height = (ui.available_height() * 0.6).max(240.0);
-            ui.add_enabled_ui(!on_road, |ui| {
-                map(ui, &self.world, &self.layout, height, &mut action);
+            ui.add_enabled_ui(!self.world_locked(), |ui| {
+                map(ui, &self.world, &self.layout, height, action);
             });
             // Below the map, so that the map does not move when a question appears.
-            question(
-                ui,
-                &self.world,
-                &self.offers,
-                &self.ways,
-                &self.heading,
-                &mut action,
-            );
+            self.ask(ui, action);
             ui.separator();
             ui.heading("Events");
-            egui::ScrollArea::vertical()
-                .id_salt("event_log")
-                .auto_shrink(false)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    for line in &self.log {
-                        ui.label(line);
-                    }
+            self.events(ui);
+        });
+    }
+
+    /// The phone layout: one panel at a time, chosen by tabs along the
+    /// bottom. A question waiting for an answer sits just above the tabs,
+    /// so it is never hidden behind another tab.
+    fn play_compact(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
+        egui::Panel::top("top_bar_compact").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.strong(self.world.date.to_string());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.menu_button("Save / Load", |ui| {
+                        ui.set_min_width(220.0);
+                        ui.label("Save name");
+                        self.save_controls(ui, action);
+                    });
                 });
+            });
+            if !self.status.is_empty() {
+                ui.weak(&self.status);
+            }
         });
 
-        if let Some(action) = action {
-            self.carry_out(action);
+        egui::Panel::bottom("tab_bar").show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.columns(Tab::ALL.len(), |columns| {
+                for (column, tab) in columns.iter_mut().zip(Tab::ALL) {
+                    let button = egui::Button::selectable(self.tab == tab, tab.name());
+                    if column
+                        .add_sized([column.available_width(), 40.0], button)
+                        .clicked()
+                    {
+                        self.tab = tab;
+                    }
+                }
+            });
+            ui.add_space(4.0);
+        });
+
+        if self.has_question() {
+            egui::Panel::bottom("question_bar").show(ui, |ui| {
+                ui.add_space(4.0);
+                self.ask(ui, action);
+                ui.add_space(4.0);
+            });
         }
+
+        egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            Tab::Map => {
+                // Keep room under the map for the latest few events.
+                let room_for_events = 24.0 * EVENTS_UNDER_MAP as f32 + 16.0;
+                let height = (ui.available_height() - room_for_events).max(200.0);
+                ui.add_enabled_ui(!self.world_locked(), |ui| {
+                    map(ui, &self.world, &self.layout, height, action);
+                });
+                ui.separator();
+                let skip = self.log.len().saturating_sub(EVENTS_UNDER_MAP);
+                for line in &self.log[skip..] {
+                    ui.label(line);
+                }
+            }
+            Tab::Place => self.places(ui, action),
+            Tab::Party => {
+                egui::ScrollArea::vertical()
+                    .id_salt("party_scroll")
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(!self.world_locked(), |ui| {
+                            party_panel(ui, &self.world, &mut self.draft, action);
+                        });
+                    });
+            }
+            Tab::Events => self.events(ui),
+        });
+    }
+
+    /// The save name and the Save and Load buttons.
+    fn save_controls(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
+        ui.add(
+            egui::TextEdit::singleline(&mut self.save_path)
+                .desired_width(ui.available_width().min(160.0)),
+        );
+        if ui.button("Save").clicked() {
+            *action = Some(Action::Save);
+        }
+        if ui.button("Load").clicked() {
+            *action = Some(Action::Load);
+        }
+    }
+
+    /// Where the party is, the roads out, and adding a place.
+    fn places(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
+        let locked = self.world_locked();
+        egui::ScrollArea::vertical()
+            .id_salt("place_scroll")
+            .show(ui, |ui| {
+                ui.add_enabled_ui(!locked, |ui| {
+                    place_panel(ui, &self.world, action);
+                    ui.separator();
+                    ui.strong("Add a place");
+                    ui.add(egui::TextEdit::singleline(&mut self.new_place).hint_text("Name"));
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut self.new_leagues)
+                                .range(1..=500)
+                                .suffix(" leagues"),
+                        );
+                        let named = !self.new_place.trim().is_empty();
+                        if ui.add_enabled(named, egui::Button::new("Add")).clicked() {
+                            *action = Some(Action::AddPlace);
+                        }
+                    });
+                    ui.weak("Joined by a new road to where the party stands.");
+                });
+            });
+    }
+
+    /// The whole event log, newest at the bottom.
+    fn events(&self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical()
+            .id_salt("event_log")
+            .auto_shrink(false)
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                for line in &self.log {
+                    ui.label(line);
+                }
+            });
+    }
+
+    /// True when the window is waiting for the player to answer something.
+    fn has_question(&self) -> bool {
+        self.world_locked()
+            || !self.offers.is_empty()
+            || self.ways.is_some()
+            || !self.heading.is_empty()
+    }
+
+    fn ask(&self, ui: &mut egui::Ui, action: &mut Option<Action>) {
+        question(
+            ui,
+            &self.world,
+            &self.offers,
+            &self.ways,
+            &self.heading,
+            action,
+        );
     }
 }
 
@@ -1076,7 +1330,15 @@ fn map(
 ) {
     let size = egui::vec2(ui.available_width(), height);
     let (response, painter) = ui.allocate_painter(size, egui::Sense::hover());
-    let area = response.rect.shrink2(egui::vec2(80.0, 34.0));
+    // Room around the edge for names. A narrow map gives up some of it.
+    let margin_x = (response.rect.width() * 0.15).min(80.0);
+    let area = response.rect.shrink2(egui::vec2(margin_x, 34.0));
+    // A fingertip is bigger than a mouse pointer.
+    let hit_size = if ui.ctx().input(|i| i.has_touch_screen()) {
+        44.0
+    } else {
+        26.0
+    };
 
     // Where every place sits, in the map image's pixels.
     let spots = layout.positions(world);
@@ -1124,7 +1386,7 @@ fn map(
         let radius = radius_of(place);
 
         if let Some(route) = route {
-            let hit_box = egui::Rect::from_center_size(centre, egui::vec2(26.0, 26.0));
+            let hit_box = egui::Rect::from_center_size(centre, egui::Vec2::splat(hit_size));
             let node = ui
                 .interact(
                     hit_box,

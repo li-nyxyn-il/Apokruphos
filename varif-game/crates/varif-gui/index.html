@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<!--
+  The page for the web build of the Varif window. Trunk reads this file,
+  builds the varif-gui crate for the browser, and writes the finished site
+  to dist/. See the README for how to build and run it.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <!-- Fit the page to a phone's screen and stop double-tap zoom. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1b1b1b" />
+  <title>Varif</title>
+
+  <link data-trunk rel="rust" data-bin="varif-gui" />
+
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #1b1b1b;
+      /* Keep the browser from scrolling or zooming the page under a drag. */
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #varif_canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ccc;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 1em;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="varif_canvas"></canvas>
+  <div id="loading"><p>Loading Varif…</p></div>
+</body>
+</html>

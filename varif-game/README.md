@@ -16,6 +16,25 @@ The window opens by asking for a new game or a saved one. A new game is a charac
 
 At the command line, type `help` for the list of commands.
 
+## Play it in a browser
+
+The window also runs in a web browser, phones included. Every push to `main` that touches this folder builds it and publishes it to <https://li-nyxyn-il.github.io/Apokruphos/> (the `Web build` workflow in `.github/workflows/web.yml`).
+
+In the browser the data file and map layout are built in, and **Save** and **Load** use the browser's own storage under the name in the save box. A save made on the phone stays on the phone.
+
+To try the web build on this computer first, install the web target and Trunk once:
+
+```
+rustup target add wasm32-unknown-unknown
+cargo install --locked trunk
+```
+
+then from `crates/varif-gui`:
+
+```
+trunk serve --address 0.0.0.0    # http://localhost:8080, or this computer's address from a phone on the same Wi-Fi
+```
+
 ## Layout
 
 | Path | What it holds |
@@ -23,6 +42,7 @@ At the command line, type `help` for the list of commands.
 | `crates/varif-core` | The library: types, rules, commands and events |
 | `crates/varif-cli` | The command-line front end (the `varif` program) |
 | `crates/varif-gui` | The window, built on egui (the `varif-gui` program) |
+| `crates/varif-gui/index.html` | The page the web build runs in |
 | `data/first_leg.ron` | The first leg of the Pylgrymage, Yhlgrym to Atzhaim, as data |
 | `data/map_layout.ron` | Where each place is drawn on the window's map |
 
