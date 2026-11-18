@@ -6,9 +6,8 @@
 
 use std::collections::BTreeMap;
 use std::f32::consts::TAU;
-use std::fs;
-use std::io::ErrorKind;
-use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::{fs, io::ErrorKind, path::Path};
 use varif_core::{PlaceId, World};
 
 /// Used when no road has both ends placed, so there is nothing to measure.
@@ -22,13 +21,20 @@ pub struct MapLayout {
 
 impl MapLayout {
     /// Reads a layout file. A missing file is an empty layout, not an error.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn read(path: &Path) -> Result<MapLayout, String> {
         let text = match fs::read_to_string(path) {
             Ok(text) => text,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(MapLayout::default()),
             Err(error) => return Err(error.to_string()),
         };
-        let placed = ron::from_str(&text).map_err(|e| e.to_string())?;
+        MapLayout::from_text(&text)
+    }
+
+    /// Reads a layout from the text of a layout file. The web build has no
+    /// files, so it carries its layout built in and reads it with this.
+    pub fn from_text(text: &str) -> Result<MapLayout, String> {
+        let placed = ron::from_str(text).map_err(|e| e.to_string())?;
         Ok(MapLayout { placed })
     }
 

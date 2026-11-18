@@ -3390,6 +3390,8 @@ dependencies = [
  "eframe",
  "ron",
  "varif-core",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
