@@ -1064,7 +1064,11 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
     let nearby = world.nearby_npcs();
     if !nearby.is_empty() {
         ui.separator();
-        ui.strong("Nearby");
+        let heading = match world.party_site.and_then(|id| place.site(id)) {
+            Some(site) => format!("Nearby, at the {}", site.name),
+            None => "Nearby".to_string(),
+        };
+        ui.strong(heading);
         for id in nearby {
             let Some(person) = world.person(id) else {
                 continue;

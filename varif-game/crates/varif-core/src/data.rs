@@ -50,6 +50,9 @@ struct PersonData {
     name: String,
     title: String,
     at: String,
+    /// The key of a site inside `at`, when that place has sites.
+    #[serde(default)]
+    site: Option<String>,
     #[serde(default)]
     in_party: bool,
     #[serde(default)]
@@ -95,6 +98,18 @@ pub enum DataError {
     BlankDialogue {
         owner: String,
     },
+    /// A person names a site that their place does not have.
+    UnknownSite {
+        person: String,
+        place: String,
+        site: String,
+    },
+    /// A person in a place with sites was not given one. Followers are
+    /// excused: they travel with the party.
+    MissingSite {
+        person: String,
+        place: String,
+    },
 }
 
 impl fmt::Display for DataError {
@@ -128,6 +143,14 @@ impl fmt::Display for DataError {
             DataError::TwoPlayers => write!(f, "two people are the player"),
             DataError::BlankDialogue { owner } => {
                 write!(f, "a line in {owner} has nothing to say")
+            }
+            DataError::UnknownSite {
+                person,
+                place,
+                site,
+            } => write!(f, "{person} names a site \"{site}\" that is not in {place}"),
+            DataError::MissingSite { person, place } => {
+                write!(f, "{person} is in {place} but names no site")
             }
         }
     }
@@ -245,6 +268,21 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
                 owner: format!("{}'s dialogue", person.name),
             });
         }
+        let place = &data.places[at.index()];
+        let site = match person.site.as_deref() {
+            Some(key) => Some(place.find_site(key).ok_or_else(|| DataError::UnknownSite {
+                person: person.name.clone(),
+                place: place.name.clone(),
+                site: key.to_string(),
+            })?),
+            None if !person.in_party && !place.sites.is_empty() => {
+                return Err(DataError::MissingSite {
+                    person: person.name.clone(),
+                    place: place.name.clone(),
+                });
+            }
+            None => None,
+        };
         people.push(Person {
             key: person.key,
             name: person.name,
@@ -254,6 +292,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             recruitable: person.recruitable,
             sheet: person.sheet,
             dialogue: person.dialogue,
+            site,
         });
     }
 

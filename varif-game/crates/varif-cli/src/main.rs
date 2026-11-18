@@ -26,7 +26,7 @@ Commands:
                   then whether to sleep (y/n);
                   when someone where you arrive could join the party, you
                   are asked whether to recruit them (y/n)
-  nearby          list the NPCs where the player is, followers too
+  nearby          list the NPCs at the spot the player stands, followers too
   interact <npc>  talk to a nearby NPC, by key, by name, or by its number
                   from nearby; pick a line by number, or bye to leave.
                   One too hostile to talk to would start combat instead,
@@ -730,7 +730,11 @@ fn look(world: &World) {
         );
         println!("  Type walk to see where it can go in {}.", place.name);
     }
-    for person in world.residents(here) {
+    // In a city, only the people at the site the party stands at are here.
+    for person in world
+        .residents(here)
+        .filter(|person| place.sites.is_empty() || person.site == world.party_site)
+    {
         println!("  {} ({}) is here.", person.name, person.title);
     }
     if !world.nearby_npcs().is_empty() {
@@ -918,14 +922,20 @@ fn fatigue_note(world: &World, fatigue: &[MemberFatigue]) -> String {
     format!(" Fatigue: {parts}.")
 }
 
-/// Lists the NPCs where the player is, numbered for `interact`.
+/// Lists the NPCs at the spot the player stands, numbered for `interact`.
 fn nearby(world: &World) {
     let people = world.nearby_npcs();
     if people.is_empty() {
         println!("No one is nearby.");
         return;
     }
-    println!("Nearby:");
+    match world
+        .party_site
+        .and_then(|id| world.place(world.party_at).and_then(|place| place.site(id)))
+    {
+        Some(site) => println!("Nearby, at the {}:", site.name),
+        None => println!("Nearby:"),
+    }
     for (i, &id) in people.iter().enumerate() {
         let Some(person) = world.person(id) else {
             continue;

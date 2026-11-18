@@ -112,7 +112,8 @@ pub enum Command {
     /// Fire the use effects of an item in the player's pack. The item stays
     /// in the pack. Consumed effects do not fire.
     Use { item: String },
-    /// Interact with an NPC where the player is. One friendly enough opens a
+    /// Interact with a nearby NPC. In a city that is someone at the site the
+    /// party stands at, or a follower. One friendly enough opens a
     /// conversation; one too hostile to talk to starts combat instead.
     Interact { person: PersonId },
     /// Say one of the lines on offer, by its place in

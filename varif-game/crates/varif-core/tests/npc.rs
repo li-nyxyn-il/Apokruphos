@@ -31,6 +31,18 @@ fn walk(world: &mut World, stop: &str) {
     }
 }
 
+/// Walks inside the current place to the site `key` stands at.
+fn stand_with(world: &mut World, key: &str) {
+    let site = world
+        .person(person(world, key))
+        .unwrap()
+        .site
+        .expect("they should be at a site");
+    if world.party_site != Some(site) {
+        world.apply(Command::Walk { to: site }).unwrap();
+    }
+}
+
 fn texts(world: &World, id: PersonId) -> Vec<String> {
     world
         .dialogue_options(id)
@@ -86,14 +98,44 @@ fn each_score_opens_one_bucket_and_a_follower_one_more() {
 fn the_npcs_where_the_player_is_are_nearby() {
     let mut world = first_leg();
     let donold = person(&world, "donold");
+    let hest = person(&world, "hest");
     let jonnoj = person(&world, "jonnoj");
+    let syla = person(&world, "syla");
+    let mael = person(&world, "mael");
 
-    // In Yhlgrym: the follower and the Kraiark, never the player.
+    // The party starts at the North Gate. The warden is there. The Kraiark
+    // is at the krypt, the merchant at the market, the steward at the palace.
+    // The follower is with the party. The player is never listed.
+    assert_eq!(world.nearby_npcs(), [donold, hest]);
+
+    stand_with(&mut world, "jonnoj");
     assert_eq!(world.nearby_npcs(), [donold, jonnoj]);
 
-    // A follower walks with the player; Jonnoj stays behind.
+    stand_with(&mut world, "syla");
+    assert_eq!(world.nearby_npcs(), [donold, syla]);
+
+    stand_with(&mut world, "mael");
+    assert_eq!(world.nearby_npcs(), [donold, mael]);
+
+    // A follower walks with the player. A place with no sites has everyone there.
     walk(&mut world, "falls");
     assert_eq!(world.nearby_npcs(), [donold]);
+}
+
+#[test]
+fn someone_at_another_site_cannot_be_talked_to() {
+    let mut world = first_leg();
+    let syla = person(&world, "syla");
+    let before = world.clone();
+    assert_eq!(
+        world.apply(Command::Interact { person: syla }),
+        Err(CommandError::NotHere)
+    );
+    assert_eq!(world, before);
+
+    stand_with(&mut world, "syla");
+    world.apply(Command::Interact { person: syla }).unwrap();
+    assert_eq!(world.conversation, Some(syla));
 }
 
 #[test]
@@ -119,6 +161,7 @@ fn standing_comes_from_attitude_and_faction_hostility() {
 fn interacting_opens_a_conversation_with_the_lines_on_offer() {
     let mut world = first_leg();
     let jonnoj = person(&world, "jonnoj");
+    stand_with(&mut world, "jonnoj");
 
     let events = world.apply(Command::Interact { person: jonnoj }).unwrap();
     assert!(matches!(
@@ -203,6 +246,7 @@ fn a_change_of_attitude_changes_what_can_be_said() {
 fn an_npc_too_hostile_to_talk_to_would_start_combat() {
     let mut world = first_leg();
     let jonnoj = person(&world, "jonnoj");
+    stand_with(&mut world, "jonnoj");
     // Hostility 1 and attitude 50: friendliness 7, below 10.
     world
         .apply(Command::SetHostility {
@@ -230,6 +274,7 @@ fn an_npc_too_hostile_to_talk_to_would_start_combat() {
 fn friendliness_of_exactly_ten_is_enough_to_talk() {
     let mut world = first_leg();
     let jonnoj = person(&world, "jonnoj");
+    stand_with(&mut world, "jonnoj");
     world
         .apply(Command::SetHostility {
             from: FactionId::Ecumenci,
@@ -288,10 +333,45 @@ fn a_bad_interaction_is_refused() {
 fn a_world_saved_mid_conversation_loads_back_in_it() {
     let mut world = first_leg();
     let jonnoj = person(&world, "jonnoj");
+    stand_with(&mut world, "jonnoj");
     world.apply(Command::Interact { person: jonnoj }).unwrap();
     let loaded = World::from_ron(&world.to_ron().unwrap()).unwrap();
     assert_eq!(loaded, world);
     assert_eq!(loaded.conversation, Some(jonnoj));
+}
+
+#[test]
+fn a_person_in_a_city_needs_a_real_site() {
+    let missing = r#"(
+        start: (year: 192, month: 1, day: 1, seed: 1, party_at: "city"),
+        places: [(key: "city", name: "City", kind: Town, sites: [
+            (key: "gate", name: "Gate", kind: Gate),
+        ])],
+        people: [(key: "a", name: "A", title: "T", at: "city")],
+    )"#;
+    assert_eq!(
+        load_world(missing).unwrap_err(),
+        DataError::MissingSite {
+            person: "A".to_string(),
+            place: "City".to_string(),
+        }
+    );
+
+    let unknown = r#"(
+        start: (year: 192, month: 1, day: 1, seed: 1, party_at: "city"),
+        places: [(key: "city", name: "City", kind: Town, sites: [
+            (key: "gate", name: "Gate", kind: Gate),
+        ])],
+        people: [(key: "a", name: "A", title: "T", at: "city", site: Some("palace"))],
+    )"#;
+    assert_eq!(
+        load_world(unknown).unwrap_err(),
+        DataError::UnknownSite {
+            person: "A".to_string(),
+            place: "City".to_string(),
+            site: "palace".to_string(),
+        }
+    );
 }
 
 #[test]
