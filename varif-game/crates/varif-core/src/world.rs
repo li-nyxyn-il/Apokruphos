@@ -201,6 +201,11 @@ pub struct Person {
     /// arrives where they are, an [`crate::Event::RecruitOffered`] asks.
     #[serde(default)]
     pub recruitable: bool,
+    /// Where inside [`Person::at`] they stand, when that place has sites.
+    /// `None` for a follower travelling with the party, and for someone in a
+    /// place with nowhere to walk to.
+    #[serde(default)]
+    pub site: Option<SiteId>,
     /// The shared character sheet. A person named only as cast leaves it empty.
     #[serde(default)]
     pub sheet: Option<Character>,
@@ -491,17 +496,33 @@ impl World {
             .collect()
     }
 
-    /// The NPCs where the player is, followers included, in the order of the
-    /// people table. Someone without a sheet is cast only and is left out.
+    /// The NPCs where the player stands, followers included, in the order of
+    /// the people table. Someone without a sheet is cast only and is left out.
+    ///
+    /// In a place with sites, only the people at the site the party stands at
+    /// are nearby: a warden at the gate is not near someone in the palace or
+    /// the market. Followers travel with the party, so they are nearby at
+    /// every site. A place with no sites has everyone there nearby.
     pub fn nearby_npcs(&self) -> Vec<PersonId> {
         let Some(player) = self.player() else {
             return Vec::new();
         };
         let here = player.at;
+        let sited = self
+            .place(here)
+            .is_some_and(|place| !place.sites.is_empty());
+        let standing = self.party_site;
         self.people
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.at == here && p.sheet.as_ref().is_some_and(|s| !s.role.is_player()))
+            .filter(|(_, person)| {
+                person.at == here
+                    && person
+                        .sheet
+                        .as_ref()
+                        .is_some_and(|sheet| !sheet.role.is_player())
+                    && (!sited || person.in_party || person.site == standing)
+            })
             .map(|(i, _)| PersonId(i as u32))
             .collect()
     }

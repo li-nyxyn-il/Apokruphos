@@ -38,6 +38,8 @@
                 (key: "court", name: "City Court", kind: Court),
                 (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
                 (key: "farms", name: "Farms", kind: Landmark), // The farms scattered about the Krypt.
+                (key: "market", name: "Market", kind: Market), // ASSUMPTION
+                (key: "palace", name: "Palace", kind: Palace), // ASSUMPTION
             ],
         ),
         (
@@ -618,11 +620,13 @@
             ),
         ),
         (
-            // Waits in Yhlgrym and asks to join when the party comes in.
+            // Waits at the Krypt of Grymsiere and asks to join when the party
+            // comes into Yhlgrym.
             key: "jonnoj",
             name: "Kraiark Jonnoj",
             title: "Kraiark",
             at: "yhlgrym",
+            site: "krypt",
             recruitable: true,
             sheet: (
                 role: Npc(follower: false),
@@ -642,6 +646,61 @@
                     reply: "Keeps the Krypt, and keeps an eye on pylgryms like you.",
                 ),
             ],
+        ),
+
+        // Sample residents of Yhlgrym, each at one site, so that "nearby"
+        // can be tried inside the city. ASSUMPTION: the people and the
+        // market and palace they stand in.
+        (
+            key: "hest",
+            name: "Hest",
+            title: "Gatewarden",
+            at: "yhlgrym",
+            site: "gate",
+            sheet: (
+                role: Npc(follower: false),
+                age: 34,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Bastion,
+                tongues: [Shentz],
+                background: "Warden of the North Gate of Yhlgrym",
+                primary: Ecumenci,
+            ),
+        ),
+        (
+            key: "syla",
+            name: "Syla",
+            title: "Merchant",
+            at: "yhlgrym",
+            site: "market",
+            sheet: (
+                role: Npc(follower: false),
+                age: 29,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Lamb,
+                tongues: [Shentz],
+                background: "Keeps a stall in the market of Yhlgrym",
+                primary: Ecumenci,
+            ),
+        ),
+        (
+            key: "mael",
+            name: "Mael",
+            title: "Steward",
+            at: "yhlgrym",
+            site: "palace",
+            sheet: (
+                role: Npc(follower: false),
+                age: 46,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Crow,
+                tongues: [Shentz],
+                background: "Steward of the palace of Yhlgrym",
+                primary: Ecumenci,
+            ),
         ),
     ],
 

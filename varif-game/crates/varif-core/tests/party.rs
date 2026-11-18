@@ -69,6 +69,8 @@ fn kraiark_jonnoj_waits_in_yhlgrym() {
     assert!(!him.in_party);
     assert!(him.recruitable);
     assert_eq!(him.at, world.find_place("yhlgrym").unwrap());
+    let krypt = world.place(him.at).unwrap().find_site("krypt").unwrap();
+    assert_eq!(him.site, Some(krypt));
     assert!(!him.sheet.as_ref().unwrap().role.is_follower());
 }
 
