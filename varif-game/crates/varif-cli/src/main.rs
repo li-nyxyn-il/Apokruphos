@@ -19,11 +19,14 @@ const HELP: &str = "\
 Commands:
   look            describe where the party is and where the roads lead
   sheet           show the player character
-  go <place>      travel to a place, by key or by name; if no road runs
-                  straight there you are offered the ways that lead there
-                  and asked before each leg (y/n); on a walk of several
-                  days you are asked each night whether to make camp (y/n),
-                  then whether to sleep (y/n);
+  go <hours> <place>
+                  travel that many hours toward a place, one league an hour,
+                  by key or by name; if no road runs straight there you are
+                  offered the ways and asked before each leg (y/n); on a
+                  longer road the party stops after those hours, and you
+                  enter another number of hours or camp;
+                  eight hours or fewer add no fatigue, and each extra hour
+                  adds the next number, once (1, then 3, then 6);
                   when someone where you arrive could join the party, you
                   are asked whether to recruit them (y/n)
   nearby          list the NPCs at the spot the player stands, followers too
@@ -37,10 +40,12 @@ Commands:
   addplace <leagues> <name>
                   put a new place on the map, a road of that many leagues
                   from where the party stands
-  camp            pitch camp; this does not pass the night
-  rest            sleep in camp; spends one food, one water and one wood
-  pack            pack up the camp
-  sleep           sleep at an inn for 5 copper, or at a residence for free
+  camp            pitch camp; this takes an hour and does not sleep
+  rest            sleep eight hours in camp; spends one food, one water
+                  and one wood
+  pack            pack up the camp; this takes an hour
+  sleep           sleep a day at an inn for 5 copper, or at a residence
+                  for free
   write <text>    add a journal entry
   journal         read the journal
   equip <item> in <slot>
@@ -95,6 +100,7 @@ fn main() {
             asking = Asking::NextStop {
                 stops: std::mem::take(&mut heading),
                 first_leg: false,
+                hours: 0,
             };
         }
 
@@ -107,20 +113,30 @@ fn main() {
                     print!("Say which? (1-{options}, or bye) ");
                 }
             }
-            // Between days on the road the question is camp, or sleep once camped.
+            // On the road the order is a number of hours, or camp. Once camped,
+            // the question is whether to sleep.
             _ if world.journey.is_some() && world.camped => print!("Sleep in camp? (y/n) "),
-            _ if world.journey.is_some() => print!("Make camp for the night? (y/n) "),
-            Asking::WhichWay(routes) => print!("Which way? (1-{}, or n to stay) ", routes.len()),
+            _ if world.journey.is_some() => {
+                let left = world.journey.unwrap().leagues_left();
+                print!("On the road, {left} leagues left. Hours to travel, or camp? ")
+            }
+            Asking::WhichWay { routes, .. } => {
+                print!("Which way? (1-{}, or n to stay) ", routes.len())
+            }
             Asking::Recruit(offers) => {
                 let name = world.person(offers[0]).map_or("them", |p| p.name.as_str());
                 print!("Recruit {name} into the party? (y/n) ");
             }
-            Asking::NextStop { stops, first_leg } => {
+            Asking::NextStop {
+                stops,
+                first_leg,
+                hours,
+            } => {
                 let name = world.place_name(stops[0]);
                 if *first_leg {
-                    print!("Travel to {name} first? (y/n) ");
+                    print!("Travel to {name} first, for {hours} hours? (y/n) ");
                 } else {
-                    print!("Continue on to {name}? (y/n) ");
+                    print!("Continue on to {name}? Enter hours, or n to stay. ");
                 }
             }
             Asking::Nothing => print!("\n> "),
@@ -168,13 +184,16 @@ fn main() {
                 }
             } else {
                 match answer.as_str() {
-                    "y" | "yes" => {
+                    "camp" | "c" => {
                         run(&mut world, Command::MakeCamp);
                     }
-                    "n" | "no" => {
-                        run(&mut world, Command::EndDay { camp: false });
-                    }
-                    _ => println!("Answer y to make camp or n to press on."),
+                    _ => match answer.parse::<u32>() {
+                        Ok(hours) if hours >= 1 => {
+                            let to = world.journey.unwrap().to;
+                            run(&mut world, Command::Travel { to, hours });
+                        }
+                        _ => println!("Enter the hours to travel, or camp."),
+                    },
                 }
             }
             continue;
@@ -204,7 +223,7 @@ fn main() {
                 }
                 continue;
             }
-            Asking::WhichWay(routes) => {
+            Asking::WhichWay { routes, hours } => {
                 match answer.parse::<usize>() {
                     Ok(n) if (1..=routes.len()).contains(&n) => {
                         let stops = routes[n - 1].stops.clone();
@@ -212,23 +231,50 @@ fn main() {
                             "The party takes the way through {}.",
                             through(&world, &stops)
                         );
-                        heading = set_out(&mut world, stops);
+                        heading = set_out(&mut world, stops, hours);
                     }
                     _ if answer == "n" || answer == "no" => stay(&world),
                     _ => {
                         println!("Answer with the number of a way, or n to stay.");
-                        asking = Asking::WhichWay(routes);
+                        asking = Asking::WhichWay { routes, hours };
                     }
                 }
                 continue;
             }
-            Asking::NextStop { stops, first_leg } => {
-                match answer.as_str() {
-                    "y" | "yes" => heading = set_out(&mut world, stops),
-                    "n" | "no" => stay(&world),
-                    _ => {
-                        println!("Answer y or n.");
-                        asking = Asking::NextStop { stops, first_leg };
+            Asking::NextStop {
+                stops,
+                first_leg,
+                hours,
+            } => {
+                if first_leg {
+                    match answer.as_str() {
+                        "y" | "yes" => heading = set_out(&mut world, stops, hours),
+                        "n" | "no" => stay(&world),
+                        _ => {
+                            println!("Answer y or n.");
+                            asking = Asking::NextStop {
+                                stops,
+                                first_leg,
+                                hours,
+                            };
+                        }
+                    }
+                } else {
+                    match answer.as_str() {
+                        "n" | "no" => stay(&world),
+                        _ => match answer.parse::<u32>() {
+                            Ok(hours) if hours >= 1 => {
+                                heading = set_out(&mut world, stops, hours);
+                            }
+                            _ => {
+                                println!("Enter the hours to travel, or n to stay.");
+                                asking = Asking::NextStop {
+                                    stops,
+                                    first_leg,
+                                    hours: 0,
+                                };
+                            }
+                        },
                     }
                 }
                 continue;
@@ -307,11 +353,13 @@ enum Asking {
     /// These people could join the party; the first is asked about now.
     Recruit(Vec<PersonId>),
     /// Several ways lead to the place; the player picks one by number.
-    WhichWay(Vec<Itinerary>),
+    /// `hours` is how long the first order on that way lasts.
+    WhichWay { routes: Vec<Itinerary>, hours: u32 },
     /// Walk to the first of these stops? The rest follow, one question each.
     NextStop {
         stops: Vec<PlaceId>,
         first_leg: bool,
+        hours: u32,
     },
 }
 
@@ -332,16 +380,28 @@ fn run(world: &mut World, command: Command) -> bool {
     }
 }
 
-/// Handles "go <place>". Walks straight there when a road joins the two
-/// places; otherwise searches for the ways that lead there and asks.
+/// Handles "go <hours> <place>". Walks straight there when a road joins the
+/// two places; otherwise searches for the ways that lead there and asks.
 fn go(world: &mut World, rest: &str) -> Asking {
-    let Some(to) = world.find_place(rest) else {
-        println!("There is no place called \"{rest}\".");
+    let Some((hours_text, place_text)) = rest.split_once(char::is_whitespace) else {
+        println!("Say how many hours: go <hours> <place>.");
+        return Asking::Nothing;
+    };
+    let Ok(hours) = hours_text.parse::<u32>() else {
+        println!("Say how many hours: go <hours> <place>.");
+        return Asking::Nothing;
+    };
+    if hours == 0 {
+        println!("Travel at least one hour.");
+        return Asking::Nothing;
+    }
+    let Some(to) = world.find_place(place_text) else {
+        println!("There is no place called \"{place_text}\".");
         return Asking::Nothing;
     };
     let here = world.party_at;
     if to == here || world.road_between(here, to).is_some() {
-        run(world, Command::Travel { to });
+        run(world, Command::Travel { to, hours });
         return Asking::Nothing;
     }
 
@@ -364,6 +424,7 @@ fn go(world: &mut World, rest: &str) -> Asking {
             Asking::NextStop {
                 stops: route.stops,
                 first_leg: true,
+                hours,
             }
         }
         n => {
@@ -387,18 +448,18 @@ fn go(world: &mut World, rest: &str) -> Asking {
             if hidden > 0 {
                 println!("  ({hidden} slower ways are not shown.)");
             }
-            Asking::WhichWay(routes)
+            Asking::WhichWay { routes, hours }
         }
     }
 }
 
-/// Starts the first leg of a route. Returns the stops still to come, or
-/// nothing if the world refused the leg.
-fn set_out(world: &mut World, stops: Vec<PlaceId>) -> Vec<PlaceId> {
+/// Starts the first leg of a route with an order of `hours`. Returns the
+/// stops still to come, or nothing if the world refused the leg.
+fn set_out(world: &mut World, stops: Vec<PlaceId>, hours: u32) -> Vec<PlaceId> {
     let Some((&first, rest)) = stops.split_first() else {
         return Vec::new();
     };
-    if run(world, Command::Travel { to: first }) {
+    if run(world, Command::Travel { to: first, hours }) {
         rest.to_vec()
     } else {
         Vec::new()
@@ -420,8 +481,7 @@ fn through(world: &World, stops: &[PlaceId]) -> String {
 }
 
 fn length(route: &Itinerary) -> String {
-    let s = if route.days == 1 { "" } else { "s" };
-    format!("{} leagues, {} day{s}", route.leagues, route.days)
+    format!("{} leagues, {} hours", route.leagues, route.hours)
 }
 
 fn describe(world: &World, event: &Event) -> String {
@@ -433,27 +493,29 @@ fn describe(world: &World, event: &Event) -> String {
         ),
         Event::DayPassed { date } => format!("  {date}"),
         Event::RoadEncounter { .. } => "  Something meets the party on the road.".to_string(),
-        Event::NightFalls { to, days_left, .. } => format!(
-            "Night falls on the road, {} day{} from {}.",
-            days_left,
-            if *days_left == 1 { "" } else { "s" },
-            world.place_name(*to)
-        ),
-        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
-        Event::PressedOn {
-            nights_without_camp,
-            extra_leagues,
+        Event::Traveled {
+            to,
+            leagues,
+            leagues_left,
+            hours,
             fatigue,
             ..
         } => {
-            let night = match nights_without_camp {
-                1 => "The party presses on through the night".to_string(),
-                n => format!("The party presses on through the night, {n} nights without camp"),
+            let stop = if *leagues_left == 0 {
+                String::new()
+            } else {
+                format!(
+                    " It stops with {leagues_left} leagues left to {}.",
+                    world.place_name(*to)
+                )
             };
             format!(
-                "{night}, covering {extra_leagues} extra leagues.{}",
+                "The party travels {leagues} leagues in {hours} hours.{stop}{}",
                 fatigue_note(world, fatigue)
             )
+        }
+        Event::CampedOnRoad { .. } => {
+            "The party makes camp beside the road. An hour passes.".to_string()
         }
         Event::Arrived { at, .. } => format!("The party arrives at {}.", world.place_name(*at)),
         Event::EnteredBy { at, gate, .. } => {
@@ -471,7 +533,10 @@ fn describe(world: &World, event: &Event) -> String {
             }
         }
         Event::Camped { at, .. } => {
-            format!("The party makes camp at {}.", world.place_name(*at))
+            format!(
+                "The party makes camp at {}. An hour passes.",
+                world.place_name(*at)
+            )
         }
         Event::Rested {
             at,
@@ -481,13 +546,16 @@ fn describe(world: &World, event: &Event) -> String {
             spent_wood,
             ..
         } => format!(
-            "The party sleeps in camp at {}.{}{}",
+            "The party sleeps eight hours in camp at {}.{}{}",
             world.place_name(*at),
             camp_note(*spent_food, *spent_water, *spent_wood),
             fatigue_note(world, fatigue)
         ),
         Event::PackedUp { at, .. } => {
-            format!("The party packs up the camp at {}.", world.place_name(*at))
+            format!(
+                "The party packs up the camp at {}. An hour passes.",
+                world.place_name(*at)
+            )
         }
         Event::Slept {
             at,
@@ -594,6 +662,9 @@ fn describe(world: &World, event: &Event) -> String {
                 leagues,
                 world.place_name(*from)
             )
+        }
+        Event::ScheduleChanged { person } => {
+            format!("{} keeps a new schedule.", person_name(world, *person))
         }
     }
 }
@@ -711,7 +782,7 @@ fn look(world: &World) {
         return;
     };
 
-    println!("{}", world.date);
+    println!("{}, hour {}", world.date, world.hour);
     println!("{} ({:?})", place.name, place.kind);
     if let Some(temple) = &place.temple {
         let state = if temple.ruined { ", in ruins" } else { "" };
@@ -785,14 +856,12 @@ fn map(world: &World) {
                 world.place_name(route.first_step)
             )
         };
-        let days = route.days;
         println!(
-            "  {} [{}], {} leagues, {} day{} ({})",
+            "  {} [{}], {} leagues, {} hours ({})",
             world.place_name(route.to),
             key,
             route.leagues,
-            days,
-            if days == 1 { "" } else { "s" },
+            route.hours,
             way
         );
     }

@@ -1,4 +1,4 @@
-//! Fatigue: pressing on, camping on the road, and a night at an inn.
+//! Fatigue: a long travel order, camping on the road, and a night at an inn.
 
 use varif_core::{
     load_world, Command, CommandError, Event, ItemType, MemberFatigue, PersonId, SiteKind, World,
@@ -8,15 +8,6 @@ const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
 
 fn first_leg() -> World {
     load_world(FIRST_LEG).expect("the first leg data should load")
-}
-
-fn person(world: &World, key: &str) -> PersonId {
-    let index = world
-        .people
-        .iter()
-        .position(|candidate| candidate.key == key)
-        .unwrap_or_else(|| panic!("no person {key}"));
-    PersonId(index as u32)
 }
 
 fn set_fatigue(world: &mut World, key: &str, fatigue: u32, debt: bool) {
@@ -40,9 +31,12 @@ fn fatigue(world: &World, key: &str) -> (u32, bool) {
     (sheet.fatigue, sheet.road_rest_debt)
 }
 
-/// Pitch camp, then sleep. On the road the sleep is the camped march.
+/// Pitch camp if it is not already up, then sleep. The camp stays pitched.
 fn camp_the_night(world: &mut World) -> Vec<Event> {
-    let mut events = world.apply(Command::MakeCamp).unwrap();
+    let mut events = Vec::new();
+    if !world.camped {
+        events.extend(world.apply(Command::MakeCamp).unwrap());
+    }
     events.extend(world.apply(Command::Rest).unwrap());
     events
 }
@@ -57,8 +51,13 @@ fn copper(world: &World) -> u32 {
 
 fn on_the_canyon(world: &mut World) {
     let atzhaim = world.find_place("atzhaim").unwrap();
-    world.apply(Command::Travel { to: atzhaim }).unwrap();
-    assert!(world.journey.is_some(), "the canyon is more than a day");
+    world
+        .apply(Command::Travel {
+            to: atzhaim,
+            hours: 8,
+        })
+        .unwrap();
+    assert!(world.journey.is_some(), "eight hours does not cross the canyon");
 }
 
 fn levels(pylgrym: u32, donold: u32) -> Vec<MemberFatigue> {
@@ -72,68 +71,6 @@ fn levels(pylgrym: u32, donold: u32) -> Vec<MemberFatigue> {
             fatigue: donold,
         },
     ]
-}
-
-/// The press at the head of `events`: night of the streak, extra leagues, fatigue.
-fn press(events: &[Event]) -> (u32, u32, &[MemberFatigue]) {
-    match events.first() {
-        Some(Event::PressedOn {
-            nights_without_camp,
-            extra_leagues,
-            fatigue,
-            ..
-        }) => (*nights_without_camp, *extra_leagues, fatigue),
-        other => panic!("expected a press, got {other:?}"),
-    }
-}
-
-#[test]
-fn pressing_on_costs_more_and_covers_less_each_night() {
-    let mut world = first_leg();
-    let start = world.date;
-    let (pylgrym, donold) = (person(&world, "pylgrym"), person(&world, "donold"));
-    assert_eq!((pylgrym, donold), (PersonId(0), PersonId(1)));
-    on_the_canyon(&mut world);
-    assert_eq!(world.journey.unwrap().leagues_walked, 9);
-
-    // Night 1: +6 leagues, 10 fatigue. 2: +4, 15. 3: +2, 20.
-    // From the fourth night on: +1 league, and 10 + 5*(n-1) fatigue.
-    let curve = [
-        (1, 6_u32, 90_u32, 24_u32),
-        (2, 4, 75, 37),
-        (3, 2, 55, 48),
-        (4, 1, 30, 58),
-    ];
-    for (night, extra, left, walked) in curve {
-        let events = world.apply(Command::EndDay { camp: false }).unwrap();
-        let (got_night, got_extra, after) = press(&events);
-        assert_eq!((got_night, got_extra), (night, extra));
-        assert_eq!(after, levels(left, left).as_slice());
-        assert_eq!(fatigue_pair(&world), (left, left));
-        // 55 stays clear of the debt. 30, the first result below 50, sets it.
-        assert_eq!(fatigue(&world, "pylgrym").1, left < 50);
-        assert_eq!(fatigue(&world, "donold").1, left < 50);
-        assert_eq!(world.journey.unwrap().leagues_walked, walked);
-        assert_eq!(world.nights_without_camp, night);
-    }
-
-    // Night 5 costs 30 and lands on 0, which is allowed. The road is finished.
-    let events = world.apply(Command::EndDay { camp: false }).unwrap();
-    let (night, extra, fatigue_after) = press(&events);
-    assert_eq!((night, extra), (5, 1));
-    assert_eq!(fatigue_after, levels(0, 0).as_slice());
-    let atzhaim = world.find_place("atzhaim").unwrap();
-    assert!(events
-        .iter()
-        .any(|event| matches!(event, Event::Arrived { at, .. } if *at == atzhaim)));
-    assert_eq!(world.journey, None);
-    assert_eq!(world.party_at, atzhaim);
-    assert_eq!(world.date.days_since(start), 6);
-    assert_eq!(
-        fatigue(&world, "jonnoj"),
-        (100, false),
-        "someone not in the party is untouched"
-    );
 }
 
 #[test]
@@ -174,27 +111,6 @@ fn road_camping_restores_five_and_holds_the_ceiling() {
 }
 
 #[test]
-fn camping_clears_the_press_streak() {
-    let mut world = first_leg();
-    on_the_canyon(&mut world);
-
-    let events = world.apply(Command::EndDay { camp: false }).unwrap();
-    assert_eq!(press(&events).0, 1);
-    assert_eq!(press(&events).1, 6);
-    assert_eq!(fatigue_pair(&world), (90, 90));
-
-    camp_the_night(&mut world);
-    assert_eq!(world.nights_without_camp, 0);
-    assert_eq!(fatigue_pair(&world), (95, 95));
-
-    // The next press is night 1 again: +6 leagues and 10 fatigue, not night 2.
-    let events = world.apply(Command::EndDay { camp: false }).unwrap();
-    assert_eq!((press(&events).0, press(&events).1), (1, 6));
-    assert_eq!(fatigue_pair(&world), (85, 85));
-    assert_eq!(world.journey.unwrap().leagues_walked, 9 + 15 + 9 + 15);
-}
-
-#[test]
 fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
     let mut world = first_leg();
     let yhlgrym = world.party_at;
@@ -215,10 +131,9 @@ fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
         SiteKind::Inn
     );
     world.apply(Command::Walk { to: inn }).unwrap();
-    // 30 and 40, both in debt, and a streak that the night should clear.
+    // 30 and 40, both in debt. The inn night clears the debt.
     set_fatigue(&mut world, "pylgrym", 30, true);
     set_fatigue(&mut world, "donold", 40, true);
-    world.nights_without_camp = 4;
     let start = world.date;
 
     assert_eq!(copper(&world), 10);
@@ -231,9 +146,9 @@ fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
     assert!(matches!(events.last(), Some(Event::DayPassed { .. })));
     assert_eq!(fatigue(&world, "pylgrym"), (50, false));
     assert_eq!(fatigue(&world, "donold"), (55, false));
-    assert_eq!(world.nights_without_camp, 0);
     assert!(!world.camped);
     assert_eq!(world.date, start.next_day());
+    assert_eq!(world.hour, 0);
 
     // The second night adds 15: 50 becomes 65, 55 becomes 70. It spends the rest.
     world.apply(Command::Sleep).unwrap();
@@ -280,39 +195,9 @@ fn a_residence_sleeps_by_the_same_rule() {
 }
 
 #[test]
-fn pressing_on_is_refused_when_anyone_would_drop_below_zero() {
+fn travel_fatigue_skips_a_member_without_a_sheet() {
     let mut world = first_leg();
-    on_the_canyon(&mut world);
-    // One member short of the 10 the first night costs is enough to refuse.
-    set_fatigue(&mut world, "pylgrym", 9, false);
-    set_fatigue(&mut world, "donold", 100, false);
-    let before = world.clone();
-    assert_eq!(
-        world.apply(Command::EndDay { camp: false }),
-        Err(CommandError::TooTired)
-    );
-    assert_eq!(world, before, "a refused press changes nothing");
-
-    // Exactly the cost is allowed, and lands on 0.
-    set_fatigue(&mut world, "pylgrym", 10, false);
-    set_fatigue(&mut world, "donold", 10, false);
-    world.apply(Command::EndDay { camp: false }).unwrap();
-    assert_eq!(fatigue(&world, "pylgrym"), (0, true));
-    assert_eq!(fatigue(&world, "donold"), (0, true));
-
-    // The next night costs 15, and 0 cannot pay it.
-    let before = world.clone();
-    assert_eq!(
-        world.apply(Command::EndDay { camp: false }),
-        Err(CommandError::TooTired)
-    );
-    assert_eq!(world, before, "a refused press changes nothing");
-}
-
-#[test]
-fn fatigue_is_only_for_a_party_member_with_a_sheet() {
-    let mut world = first_leg();
-    on_the_canyon(&mut world);
+    let atzhaim = world.find_place("atzhaim").unwrap();
     world
         .people
         .iter_mut()
@@ -320,25 +205,42 @@ fn fatigue_is_only_for_a_party_member_with_a_sheet() {
         .unwrap()
         .sheet = None;
 
-    let events = world.apply(Command::EndDay { camp: false }).unwrap();
-    assert_eq!(press(&events).2, &levels(90, 90)[..1]);
-    assert_eq!(fatigue(&world, "pylgrym"), (90, false));
+    // Nine hours is one extra hour, which costs 1, and only the Pylgrym pays.
+    let events = world
+        .apply(Command::Travel {
+            to: atzhaim,
+            hours: 9,
+        })
+        .unwrap();
+    let fatigue = events.iter().find_map(|event| match event {
+        Event::Traveled { fatigue, .. } => Some(fatigue),
+        _ => None,
+    });
+    assert_eq!(fatigue.unwrap().as_slice(), &levels(99, 99)[..1]);
+    assert_eq!(fatigue_pair_pylgrym(&world), (99, false));
     assert!(world
         .people
         .iter()
-        .find(|p| p.key == "donold")
+        .find(|person| person.key == "donold")
         .unwrap()
         .sheet
         .is_none());
 
-    // With no sheet, Donold cannot block the press. The Pylgrym can.
-    set_fatigue(&mut world, "pylgrym", 5, false);
+    // With no sheet, Donold cannot block the order. The Pylgrym can.
+    set_fatigue(&mut world, "pylgrym", 0, false);
     let before = world.clone();
     assert_eq!(
-        world.apply(Command::EndDay { camp: false }),
+        world.apply(Command::Travel {
+            to: atzhaim,
+            hours: 9,
+        }),
         Err(CommandError::TooTired)
     );
     assert_eq!(world, before);
+}
+
+fn fatigue_pair_pylgrym(world: &World) -> (u32, bool) {
+    fatigue(world, "pylgrym")
 }
 
 fn fatigue_pair(world: &World) -> (u32, u32) {

@@ -54,9 +54,9 @@ fn every_way_round_the_loop_is_found_quickest_first() {
     let found: Vec<Vec<String>> = routes.iter().map(|r| names(&world, &r.stops)).collect();
     assert_eq!(found, [vec!["Ford", "Hill", "Keep"], vec!["Mill", "Keep"]]);
 
-    // 4 + 4 + 4 leagues is one day a road; 10 + 10 leagues is two a road.
-    assert_eq!((routes[0].leagues, routes[0].days), (12, 3));
-    assert_eq!((routes[1].leagues, routes[1].days), (20, 4));
+    // One league takes one hour, so the hours are the leagues.
+    assert_eq!((routes[0].leagues, routes[0].hours), (12, 12));
+    assert_eq!((routes[1].leagues, routes[1].hours), (20, 20));
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn atzhaim_can_be_reached_by_the_road_or_through_maphlia() {
 
     // The Pylgrymage road up the canyon is the quickest way.
     assert_eq!(names(&world, &routes[0].stops), ["Atzhaim"]);
-    assert_eq!(routes[0].days, 7, "the same 7 days as walking it");
+    assert_eq!(routes[0].hours, 60, "sixty leagues is sixty hours");
 
     // The map has many loops, so there are many slower ways. The quickest
     // that avoids the canyon goes by the falls, the south road, Maphlamar and

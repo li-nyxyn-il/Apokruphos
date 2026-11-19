@@ -702,6 +702,73 @@
                 primary: Ecumenci,
             ),
         ),
+
+        // A one-day round of the sites of Yhlgrym: the fields, the inn, and
+        // the market. The schedule repeats every 24 hours. ASSUMPTION: the
+        // person, until the cast of the era is decided.
+        (
+            key: "bren",
+            name: "Bren",
+            title: "Farmer",
+            at: "yhlgrym",
+            site: "farms",
+            sheet: (
+                role: Npc(follower: false),
+                age: 38,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Hare,
+                tongues: [Shentz],
+                background: "Farms the fields around the Krypt of Yhlgrym",
+                primary: Ecumenci,
+            ),
+            schedule: (
+                spans: [
+                    (hours: 10, place: "yhlgrym", site: Some("farms")),
+                    (hours: 6, place: "yhlgrym", site: Some("inn")),
+                    (hours: 8, place: "yhlgrym", site: Some("market")),
+                ],
+            ),
+        ),
+        // A month on the road across the neck and back: a stay in Yhlgrym,
+        // the canyon to Atzhaim, a stay there, and the canyon home.
+        // 540 + 60 + 540 + 60 = 1200 hours, which is fifty days.
+        // ASSUMPTION: the person, until the cast of the era is decided.
+        (
+            key: "iorvyn",
+            name: "Iorvyn",
+            title: "Courier",
+            at: "yhlgrym",
+            site: "inn",
+            sheet: (
+                role: Npc(follower: false),
+                age: 31,
+                blood: Red,
+                heritage: Shentzi,
+                akstada: Fox,
+                tongues: [Shentz, Maphlian],
+                background: "Carries letters across the neck, Yhlgrym to Atzhaim and back",
+                primary: Ecumenci,
+            ),
+            schedule: (
+                spans: [
+                    (hours: 540, place: "yhlgrym", site: Some("inn")),
+                    (
+                        hours: 60,
+                        place: "atzhaim",
+                        road_from: Some("yhlgrym"),
+                        road_to: Some("atzhaim"),
+                    ),
+                    (hours: 540, place: "atzhaim", site: Some("market")),
+                    (
+                        hours: 60,
+                        place: "yhlgrym",
+                        road_from: Some("atzhaim"),
+                        road_to: Some("yhlgrym"),
+                    ),
+                ],
+            ),
+        ),
     ],
 
     // Lines any NPC can be offered. Each needs one bucket open: friendliness,

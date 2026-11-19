@@ -71,13 +71,12 @@ fn supplies_are_spent_when_the_party_sleeps() {
     carry(&mut world, "donold", ItemType::Water, 1);
     carry(&mut world, "pylgrym", ItemType::Wood, 1);
     let date = world.date;
-    world.nights_without_camp = 2;
 
     let events = world.apply(Command::MakeCamp).unwrap();
     assert!(matches!(events.as_slice(), [Event::Camped { .. }]));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.nights_without_camp, 2);
+    assert_eq!(world.hour, 1);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), 2);
     assert_eq!(holding(&world, "donold", ItemType::Water), 1);
     assert_eq!(holding(&world, "pylgrym", ItemType::Wood), 1);
@@ -92,7 +91,8 @@ fn supplies_are_spent_when_the_party_sleeps() {
             ..
         })
     ));
-    assert_eq!(world.date, date.next_day());
+    assert_eq!(world.date, date);
+    assert_eq!(world.hour, 9);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), 1);
     assert_eq!(holding(&world, "donold", ItemType::Water), 0);
     assert_eq!(holding(&world, "pylgrym", ItemType::Wood), 0);
@@ -149,9 +149,9 @@ fn each_missing_supply_applies_only_its_penalty() {
 
 fn camp_missing(world: &mut World, spent_food: bool, spent_water: bool, spent_wood: bool) {
     let date = world.date;
-    world.nights_without_camp = 3;
     world.apply(Command::MakeCamp).unwrap();
     assert_eq!(world.date, date);
+    assert_eq!(world.hour, 1);
     assert_eq!(party_vitals(world), vec![(100, 100, 100), (100, 100, 100)]);
     let events = world.apply(Command::Rest).unwrap();
     assert!(matches!(
@@ -164,8 +164,8 @@ fn camp_missing(world: &mut World, spent_food: bool, spent_water: bool, spent_wo
         }) if *food == spent_food && *water == spent_water && *wood == spent_wood
     ));
     assert!(world.camped);
-    assert_eq!(world.date, date.next_day());
-    assert_eq!(world.nights_without_camp, 0);
+    assert_eq!(world.date, date);
+    assert_eq!(world.hour, 9);
 }
 
 #[test]
@@ -173,7 +173,6 @@ fn sleeping_still_succeeds_with_an_empty_pack() {
     let mut world = first_leg();
     clear_packs(&mut world);
     let date = world.date;
-    world.nights_without_camp = 3;
     world.apply(Command::MakeCamp).unwrap();
     assert_eq!(party_vitals(&world), vec![(100, 100, 100), (100, 100, 100)]);
     let events = world.apply(Command::Rest).unwrap();
@@ -187,8 +186,8 @@ fn sleeping_still_succeeds_with_an_empty_pack() {
         })
     ));
     assert!(world.camped);
-    assert_eq!(world.date, date.next_day());
-    assert_eq!(world.nights_without_camp, 0);
+    assert_eq!(world.date, date);
+    assert_eq!(world.hour, 9);
     assert_eq!(party_vitals(&world), vec![(95, 95, 95), (95, 95, 95)]);
 }
 
@@ -219,9 +218,12 @@ fn a_second_night_in_the_same_camp_spends_supplies_again() {
 fn the_party_cannot_camp_in_a_town() {
     let mut world = first_leg();
     let falls = world.find_place("falls").unwrap();
-    world.apply(Command::Travel { to: falls }).unwrap();
-    world.apply(Command::MakeCamp).unwrap();
-    world.apply(Command::Rest).unwrap();
+    world
+        .apply(Command::Travel {
+            to: falls,
+            hours: 15,
+        })
+        .unwrap();
     assert_eq!(world.party_at, falls);
     assert!(world.journey.is_none());
 
@@ -239,7 +241,6 @@ fn make_camp_does_not_sleep() {
     set_fatigue(&mut world, "pylgrym", 80, false);
     set_fatigue(&mut world, "donold", 80, false);
     let date = world.date;
-    world.nights_without_camp = 2;
 
     let events = world.apply(Command::MakeCamp).unwrap();
     assert!(events
@@ -247,7 +248,7 @@ fn make_camp_does_not_sleep() {
         .all(|event| !matches!(event, Event::DayPassed { .. } | Event::Rested { .. })));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.nights_without_camp, 2);
+    assert_eq!(world.hour, 1);
     assert_eq!(party_vitals(&world), vec![(80, 100, 100), (80, 100, 100)]);
 }
 
@@ -257,7 +258,6 @@ fn sleeping_in_camp_restores_fatigue_like_a_road_camp() {
     // 47 with the road-rest debt stops at 50. 80 with no debt gains 5.
     set_fatigue(&mut world, "pylgrym", 47, true);
     set_fatigue(&mut world, "donold", 80, false);
-    world.nights_without_camp = 4;
     let date = world.date;
     world.apply(Command::MakeCamp).unwrap();
 
@@ -269,10 +269,12 @@ fn sleeping_in_camp_restores_fatigue_like_a_road_camp() {
             MemberFatigue { person: PersonId(1), fatigue: 85 },
         ]
     ));
-    assert!(matches!(events.last(), Some(Event::DayPassed { .. })));
+    assert!(events
+        .iter()
+        .all(|event| !matches!(event, Event::DayPassed { .. })));
     assert!(world.camped);
-    assert_eq!(world.date, date.next_day());
-    assert_eq!(world.nights_without_camp, 0);
+    assert_eq!(world.date, date);
+    assert_eq!(world.hour, 9);
     // The starting food restores 10 health when the camp consumes it.
     // Donold carries none, so only the Pylgrym is restored.
     assert_eq!(party_vitals(&world), vec![(50, 110, 100), (85, 100, 100)]);
@@ -309,7 +311,10 @@ fn a_journey_cannot_continue_until_pack_up() {
     let atzhaim = world.find_place("atzhaim").unwrap();
 
     assert_eq!(
-        world.apply(Command::Travel { to: atzhaim }),
+        world.apply(Command::Travel {
+            to: atzhaim,
+            hours: 8,
+        }),
         Err(CommandError::StillCamped)
     );
     assert_eq!(world, pitched);
@@ -322,6 +327,11 @@ fn a_journey_cannot_continue_until_pack_up() {
     assert_eq!(world.date, date);
     assert_eq!(party_vitals(&world), vitals);
 
-    world.apply(Command::Travel { to: atzhaim }).unwrap();
+    world
+        .apply(Command::Travel {
+            to: atzhaim,
+            hours: 8,
+        })
+        .unwrap();
     assert!(world.journey.is_some());
 }

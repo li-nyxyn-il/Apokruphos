@@ -8,14 +8,30 @@ fn first_leg() -> World {
     load_world(FIRST_LEG).expect("the first leg data should load")
 }
 
-/// Travels to each stop in turn, camping every night.
+/// Travels to each stop in turn, eight hours at a time.
 fn travel(world: &mut World, stops: &[&str]) {
     for stop in stops {
         let to = world.find_place(stop).unwrap();
-        world.apply(Command::Travel { to }).unwrap();
-        while world.journey.is_some() {
-            world.apply(Command::MakeCamp).unwrap();
-            world.apply(Command::Rest).unwrap();
+        loop {
+            let left = if let Some(journey) = world.journey {
+                journey.leagues_left()
+            } else if world.party_at == to {
+                break;
+            } else {
+                world.road_between(world.party_at, to).unwrap().leagues
+            };
+            if left == 0 {
+                break;
+            }
+            world
+                .apply(Command::Travel {
+                    to,
+                    hours: left.min(8),
+                })
+                .unwrap();
+            if world.journey.is_none() {
+                break;
+            }
         }
     }
 }
@@ -95,7 +111,12 @@ fn an_unknown_site_is_refused() {
 fn leaving_a_city_leaves_its_sites_behind() {
     let mut world = first_leg();
     let falls = world.find_place("falls").unwrap();
-    world.apply(Command::Travel { to: falls }).unwrap();
+    world
+        .apply(Command::Travel {
+            to: falls,
+            hours: 15,
+        })
+        .unwrap();
     assert_eq!(world.party_site, None);
 }
 

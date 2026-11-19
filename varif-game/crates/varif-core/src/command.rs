@@ -1,6 +1,6 @@
 //! Commands go in, events come out. The rules of the world live here.
 
-use crate::calendar::Date;
+use crate::calendar::{Date, HOURS_PER_DAY};
 use crate::character::{
     EffectKind, EffectPayload, EquipSlot, Equipped, Item, ItemType, Role, BASE_FATIGUE,
     MAX_ATTITUDE, MIN_ATTITUDE,
@@ -8,28 +8,40 @@ use crate::character::{
 use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::Standing;
+use crate::schedule::Schedule;
 use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// How far a camped march covers in a calendar day. Pressing on covers
-/// extra leagues that night, fewer as the streak grows.
-pub const LEAGUES_PER_DAY: u32 = 9;
+/// Pitching camp takes an hour. It does not sleep and does not spend supplies.
+pub const MAKE_CAMP_HOURS: u32 = 1;
+/// Sleeping in camp takes eight hours. That is the night.
+pub const REST_HOURS: u32 = 8;
+/// Packing the camp up takes an hour.
+pub const PACK_UP_HOURS: u32 = 1;
+/// A night at an inn or a residence takes a full day on the clock.
+const INN_HOURS: u32 = HOURS_PER_DAY;
+/// Hours of one travel order that add no fatigue. Each hour past this costs
+/// the next whole number, summed once for the order.
+pub const UNTIRED_HOURS: u32 = 8;
 
-/// ASSUMPTION: the daily encounter chance on a road the player adds by hand.
+/// ASSUMPTION: the encounter chance on a road the player adds by hand.
 pub const NEW_ROAD_ENCOUNTER_CHANCE: u32 = 15;
+
+/// Fatigue one travel order of `hours` costs. Eight hours or fewer cost
+/// nothing. `n` hours past that cost `n * (n + 1) / 2`, once, not per league.
+pub fn travel_fatigue(hours: u32) -> u32 {
+    let extra = hours.saturating_sub(UNTIRED_HOURS);
+    extra.saturating_mul(extra.saturating_add(1)) / 2
+}
 
 /// Fatigue a night camped beside the road restores, and never past [`BASE_FATIGUE`].
 const ROAD_CAMP_RESTORE: u32 = 5;
 /// Fatigue a night at an inn or a residence restores, and never past [`BASE_FATIGUE`].
 const INN_RESTORE: u32 = 15;
-/// After pressing on has left a member below this, road camping stops here
-/// until a night at an inn or a residence.
+/// After fatigue has fallen below this, road camping stops here until a night
+/// at an inn or a residence.
 const ROAD_REST_CEILING: u32 = 50;
-/// Fatigue the first night of pressing on costs. Each further night of the
-/// streak costs [`PRESS_FATIGUE_STEP`] more.
-const PRESS_FATIGUE: u32 = 10;
-const PRESS_FATIGUE_STEP: u32 = 5;
 /// Fatigue a missing ration costs each party member who has a sheet.
 const MISSING_FOOD_FATIGUE: u32 = 5;
 /// Health a dry camp costs each party member who has a sheet.
@@ -39,50 +51,32 @@ const MISSING_WOOD_RESILIENCE: u32 = 5;
 /// Copper a night at an inn costs. A residence costs nothing.
 const INN_COPPER: u32 = 5;
 
-/// Extra leagues the nth night of pressing on adds to that day's march.
-/// Night 1 adds 6, night 2 adds 4, night 3 adds 2, and every later night adds 1.
-fn extra_leagues(night: u32) -> u32 {
-    match night {
-        1 => 6,
-        2 => 4,
-        3 => 2,
-        n if n >= 4 => 1,
-        _ => 0,
-    }
-}
-
-/// Fatigue pressing on costs on night `night` of the current streak.
-/// Night 1 costs 10, then 15, 20, 25, and so on.
-fn press_cost(night: u32) -> u32 {
-    PRESS_FATIGUE.saturating_add(PRESS_FATIGUE_STEP.saturating_mul(night.saturating_sub(1)))
-}
-
 /// Something the player asks the world to do.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {
-    /// Walk the road to a neighbouring place. A walk of more than one day
-    /// stops at the end of each day but the last, waiting for [`Command::EndDay`].
-    Travel { to: PlaceId },
-    /// Answer a night on the road. `camp: false` presses on. `camp: true`
-    /// pitches camp and does not pass the night; the road prompt uses
-    /// [`Command::MakeCamp`], and [`Command::Rest`] spends the night.
-    EndDay { camp: bool },
+    /// Walk `hours` along the road to `to`, one league an hour, then stop.
+    /// `to` is a neighbour, or the place the current journey is already bound
+    /// for. Hours past [`UNTIRED_HOURS`] cost [`travel_fatigue`] once for the
+    /// order. Refused when that cost would drop any member who has a sheet
+    /// below zero; the world is left unchanged.
+    Travel { to: PlaceId, hours: u32 },
     /// Walk to a site inside the place where the party is.
     Walk { to: SiteId },
     /// Pitch camp where the party stands, or beside the road when travelling.
-    /// Refused inside a town. Does not pass the night, spend supplies, restore
-    /// fatigue, or clear the sleepless streak.
+    /// Takes [`MAKE_CAMP_HOURS`]. Refused inside a town. Does not sleep, spend
+    /// supplies, or restore fatigue.
     MakeCamp,
-    /// Sleep in the pitched camp and pass the night. Spends one food, one
+    /// Sleep in the pitched camp for [`REST_HOURS`]. Spends one food, one
     /// water and one wood when the party carries them. That spend consumes
     /// the item, so its consumed effects fire. A missing supply is a
-    /// penalty, not a refusal. On the road this is also the camped march.
+    /// penalty, not a refusal. The camp stays pitched.
     Rest,
     /// Sleep one night where the party stands, when that is an inn or a
     /// residence. An inn costs [`INN_COPPER`] copper. A residence does not,
     /// unless the site is marked as an inn.
     Sleep,
-    /// Take down the pitched camp. The party cannot travel until it does.
+    /// Take down the pitched camp. Takes [`PACK_UP_HOURS`]. The party cannot
+    /// travel until it does.
     PackUp,
     /// Add an entry to the journal.
     WriteJournal { text: String },
@@ -121,6 +115,8 @@ pub enum Command {
     Say { line: usize },
     /// Leave the conversation.
     EndConversation,
+    /// Replace an NPC's schedule. The next whereabouts lookup follows the new cycle.
+    SetSchedule { person: PersonId, schedule: Schedule },
 }
 
 /// Something that happened in the world as the result of a command.
@@ -139,30 +135,25 @@ pub enum Event {
         to: PlaceId,
         on: Date,
     },
-    /// A day on the road is over and the walk is not. The world now waits for
-    /// a [`Command::EndDay`].
-    NightFalls {
+    /// The party walked `leagues` leagues in this order, one per hour, and
+    /// stopped. `leagues_left` is what remains. Zero means the next event is
+    /// the arrival.
+    Traveled {
         from: PlaceId,
         to: PlaceId,
-        days_left: u32,
+        leagues: u32,
+        leagues_left: u32,
+        hours: u32,
         on: Date,
+        hour: u32,
+        /// Fatigue of each party member who has a sheet, after this order.
+        fatigue: Vec<MemberFatigue>,
     },
     /// The party pitched camp beside the road. The night has not passed.
     CampedOnRoad {
         from: PlaceId,
         to: PlaceId,
         on: Date,
-    },
-    /// The party went through the night without making camp. `extra_leagues`
-    /// is how far past a camped day this march reaches.
-    PressedOn {
-        from: PlaceId,
-        to: PlaceId,
-        nights_without_camp: u32,
-        extra_leagues: u32,
-        on: Date,
-        /// Fatigue of each party member who has a sheet, after the night.
-        fatigue: Vec<MemberFatigue>,
     },
     Arrived {
         at: PlaceId,
@@ -295,6 +286,10 @@ pub enum Event {
         person: PersonId,
         friendliness: u32,
     },
+    /// An NPC's schedule was replaced.
+    ScheduleChanged {
+        person: PersonId,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -310,10 +305,10 @@ pub enum CommandError {
     EmptyPlaceName,
     PlaceExists(String),
     NoDistance,
-    /// The party is between places and must first say whether it camps.
+    /// The party is between places, and this command does not belong there.
     OnTheRoad,
-    /// There is no day on the road to end.
-    NotOnTheRoad,
+    /// A travel order named no hours.
+    NoHours,
     /// The place has nowhere inside it to walk to.
     NowhereToWalk,
     UnknownSite(SiteId),
@@ -329,8 +324,10 @@ pub enum CommandError {
     HostilityTowardItself,
     /// The person is not an NPC, so they have no attitude.
     NoAttitude,
-    /// Pressing on would drop a party member's fatigue below zero.
+    /// The travel order would drop a party member's fatigue below zero.
     TooTired,
+    /// A schedule span lasts no hours.
+    EmptySpan,
     /// The party is not standing at an inn or a residence.
     NotAtAnInn,
     /// A camp is already pitched.
@@ -384,13 +381,8 @@ impl fmt::Display for CommandError {
             CommandError::PlaceExists(name) => {
                 write!(f, "there is already a place called \"{name}\"")
             }
-            CommandError::OnTheRoad => {
-                write!(
-                    f,
-                    "the party is on the road and must first decide whether to camp"
-                )
-            }
-            CommandError::NotOnTheRoad => write!(f, "the party is not on the road"),
+            CommandError::OnTheRoad => write!(f, "the party is on the road"),
+            CommandError::NoHours => write!(f, "say how many hours to travel"),
             CommandError::NowhereToWalk => write!(f, "there is nowhere to walk to here"),
             CommandError::UnknownSite(id) => write!(f, "there is no site with id {} here", id.0),
             CommandError::UnknownPerson(id) => write!(f, "there is no person with id {}", id.0),
@@ -413,7 +405,8 @@ impl fmt::Display for CommandError {
                 )
             }
             CommandError::NoAttitude => write!(f, "they have no attitude toward the player"),
-            CommandError::TooTired => write!(f, "the party is too tired to press on"),
+            CommandError::TooTired => write!(f, "the party is too tired to travel that long"),
+            CommandError::EmptySpan => write!(f, "a schedule span needs at least one hour"),
             CommandError::NotAtAnInn => {
                 write!(f, "the party is not at an inn or a residence")
             }
@@ -460,7 +453,7 @@ impl World {
         if self.journey.is_some()
             && !matches!(
                 command,
-                Command::EndDay { .. }
+                Command::Travel { .. }
                     | Command::MakeCamp
                     | Command::Rest
                     | Command::PackUp
@@ -469,13 +462,13 @@ impl World {
                     | Command::Equip { .. }
                     | Command::Unequip { .. }
                     | Command::Use { .. }
+                    | Command::SetSchedule { .. }
             )
         {
             return Err(CommandError::OnTheRoad);
         }
         match command {
-            Command::EndDay { camp } => self.end_day(camp),
-            Command::Travel { to } => self.travel(to),
+            Command::Travel { to, hours } => self.travel(to, hours),
             Command::Walk { to } => self.walk(to),
             Command::MakeCamp => self.make_camp(),
             Command::Rest => self.rest(),
@@ -496,6 +489,7 @@ impl World {
             Command::Interact { person } => self.interact(person),
             Command::Say { line } => self.say(line),
             Command::EndConversation => self.end_conversation(),
+            Command::SetSchedule { person, schedule } => self.set_schedule(person, schedule),
         }
     }
 
@@ -619,117 +613,120 @@ impl World {
         }])
     }
 
-    fn travel(&mut self, to: PlaceId) -> Result<Vec<Event>, CommandError> {
+    fn travel(&mut self, to: PlaceId, ordered: u32) -> Result<Vec<Event>, CommandError> {
+        if ordered == 0 {
+            return Err(CommandError::NoHours);
+        }
         if self.camped {
             return Err(CommandError::StillCamped);
         }
-        let from = self.party_at;
         if self.place(to).is_none() {
             return Err(CommandError::UnknownPlace(to));
         }
-        if from == to {
+
+        let (from, leagues, walked, encounter_chance, starting) = if let Some(journey) = self.journey
+        {
+            if journey.to != to {
+                return Err(CommandError::OnTheRoad);
+            }
+            (
+                journey.from,
+                journey.leagues,
+                journey.leagues_walked,
+                journey.encounter_chance,
+                false,
+            )
+        } else {
+            let here = self.party_at;
+            if here == to {
+                return Err(CommandError::AlreadyThere);
+            }
+            // `Road` is `Copy`, so this takes a copy and stops borrowing `self`.
+            let road = *self
+                .road_between(here, to)
+                .ok_or(CommandError::NoRoad { from: here, to })?;
+            (here, road.leagues, 0, road.encounter_chance, true)
+        };
+
+        let left = leagues.saturating_sub(walked);
+        // The order stops at the destination. Fatigue is for the hours
+        // actually walked, once, not for each league and not for hours the
+        // road does not have.
+        let hours = ordered.min(left);
+        if hours == 0 {
             return Err(CommandError::AlreadyThere);
         }
-        // `Road` is `Copy`, so this takes a copy and stops borrowing `self`.
-        let road = *self
-            .road_between(from, to)
-            .ok_or(CommandError::NoRoad { from, to })?;
-
-        let mut events = vec![Event::Departed {
-            from,
-            to,
-            on: self.date,
-        }];
-        self.camped = false;
-        self.party_site = None;
-        let mut journey = Journey {
-            from,
-            to,
-            leagues: road.leagues,
-            leagues_walked: 0,
-            encounter_chance: road.encounter_chance,
-        };
-        // Setting out is a camped march. Pressing on is chosen at day's end.
-        self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY);
-        Ok(events)
-    }
-
-    fn end_day(&mut self, camp: bool) -> Result<Vec<Event>, CommandError> {
-        if self.journey.is_none() {
-            return Err(CommandError::NotOnTheRoad);
-        }
-        // Pitching camp is MakeCamp. It must not skip the day.
-        if camp {
-            return self.make_camp();
-        }
-        if self.camped {
-            return Err(CommandError::StillCamped);
-        }
-        let mut journey = self.journey.expect("the journey was checked");
-        let (from, to, on) = (journey.from, journey.to, self.date);
-
-        let night = self.nights_without_camp + 1;
-        let cost = press_cost(night);
-        if !self.can_afford_press(cost) {
+        let cost = travel_fatigue(hours);
+        if !self.can_afford_fatigue(cost) {
             return Err(CommandError::TooTired);
         }
-        let extra = extra_leagues(night);
-        self.nights_without_camp = night;
-        let fatigue = self.spend_fatigue(cost);
-        let mut events = vec![Event::PressedOn {
+
+        let mut events = Vec::new();
+        if starting {
+            events.push(Event::Departed {
+                from,
+                to,
+                on: self.date,
+            });
+            self.party_site = None;
+        }
+        if cost > 0 {
+            self.spend_fatigue(cost);
+        }
+        let fatigue = self.member_fatigue();
+
+        let mut remaining = hours;
+        while remaining > 0 {
+            let until_midnight = HOURS_PER_DAY - self.hour;
+            let chunk = remaining.min(until_midnight);
+            self.advance_hours(chunk, &mut events);
+            if self.rng.chance(encounter_chance) {
+                events.push(Event::RoadEncounter {
+                    from,
+                    to,
+                    on: self.date,
+                });
+            }
+            remaining -= chunk;
+        }
+
+        let leagues_walked = walked + hours;
+        let leagues_left = leagues.saturating_sub(leagues_walked);
+        events.push(Event::Traveled {
             from,
             to,
-            nights_without_camp: night,
-            extra_leagues: extra,
-            on,
+            leagues: hours,
+            leagues_left,
+            hours,
+            on: self.date,
+            hour: self.hour,
             fatigue,
-        }];
-        self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY + extra);
-        Ok(events)
-    }
+        });
 
-    /// Walks one day of a journey, covering `leagues_today`. Afterwards the
-    /// party has either arrived or stops for the night, with the journey
-    /// saved on the world.
-    fn walk_day(&mut self, journey: &mut Journey, events: &mut Vec<Event>, leagues_today: u32) {
-        let (from, to) = (journey.from, journey.to);
-        self.date = self.date.next_day();
-        events.push(Event::DayPassed { date: self.date });
-        if self.rng.chance(journey.encounter_chance) {
-            events.push(Event::RoadEncounter {
+        if leagues_left > 0 {
+            self.journey = Some(Journey {
                 from,
                 to,
-                on: self.date,
+                leagues,
+                leagues_walked,
+                encounter_chance,
             });
-        }
-        journey.leagues_walked = journey
-            .leagues_walked
-            .saturating_add(leagues_today)
-            .min(journey.leagues);
-
-        if journey.leagues_walked < journey.leagues {
-            self.journey = Some(*journey);
-            events.push(Event::NightFalls {
-                from,
-                to,
-                days_left: journey.days_left(),
-                on: self.date,
-            });
-            return;
+            return Ok(events);
         }
 
         self.journey = None;
         self.party_at = to;
-        for person in self.people.iter_mut().filter(|p| p.in_party) {
+        for person in self.people.iter_mut().filter(|person| person.in_party) {
             person.at = to;
         }
         events.push(Event::Arrived {
             at: to,
             on: self.date,
         });
-
-        let from_key = self.place(from).map(|p| p.key.as_str());
-        self.party_site = self.place(to).and_then(|p| p.gate_for(from_key));
+        let from_key = self.place(from).map(|place| place.key.clone());
+        self.party_site = self
+            .place(to)
+            .and_then(|place| place.gate_for(from_key.as_deref()));
         if let Some(gate) = self.party_site {
             events.push(Event::EnteredBy {
                 at: to,
@@ -743,6 +740,53 @@ impl World {
                 at: to,
                 on: self.date,
             });
+        }
+        Ok(events)
+    }
+
+    fn set_schedule(
+        &mut self,
+        id: PersonId,
+        schedule: Schedule,
+    ) -> Result<Vec<Event>, CommandError> {
+        let person = self.person(id).ok_or(CommandError::UnknownPerson(id))?;
+        if person.is_player() {
+            return Err(CommandError::NotAnNpc);
+        }
+        for span in &schedule.spans {
+            if span.hours == 0 {
+                return Err(CommandError::EmptySpan);
+            }
+            let place = self
+                .place(span.whereabouts.place)
+                .ok_or(CommandError::UnknownPlace(span.whereabouts.place))?;
+            if let Some(site) = span.whereabouts.site {
+                if place.site(site).is_none() {
+                    return Err(CommandError::UnknownSite(site));
+                }
+            }
+            if let Some(road) = span.whereabouts.on_the_road {
+                if self.place(road.from).is_none() {
+                    return Err(CommandError::UnknownPlace(road.from));
+                }
+                if self.place(road.to).is_none() {
+                    return Err(CommandError::UnknownPlace(road.to));
+                }
+            }
+        }
+        self.people[id.index()].schedule = schedule;
+        Ok(vec![Event::ScheduleChanged { person: id }])
+    }
+
+    /// Moves the clock forward. Each time the hour crosses 24, the date rolls
+    /// and a [`Event::DayPassed`] is recorded.
+    fn advance_hours(&mut self, hours: u32, events: &mut Vec<Event>) {
+        let total = u64::from(self.hour) + u64::from(hours);
+        let days = total / u64::from(HOURS_PER_DAY);
+        self.hour = (total % u64::from(HOURS_PER_DAY)) as u32;
+        for _ in 0..days {
+            self.date = self.date.next_day();
+            events.push(Event::DayPassed { date: self.date });
         }
     }
 
@@ -803,8 +847,6 @@ impl World {
         };
         let on = self.date;
         let fatigue = self.restore_at_inn();
-        self.nights_without_camp = 0;
-        self.date = self.date.next_day();
         let mut events = vec![Event::Slept {
             at,
             site,
@@ -813,12 +855,12 @@ impl World {
             copper,
         }];
         events.extend(spent);
-        events.push(Event::DayPassed { date: self.date });
+        self.advance_hours(INN_HOURS, &mut events);
         Ok(events)
     }
 
     /// True when every party member who has a sheet can pay `cost`.
-    fn can_afford_press(&self, cost: u32) -> bool {
+    fn can_afford_fatigue(&self, cost: u32) -> bool {
         self.people
             .iter()
             .filter(|person| person.in_party)
@@ -912,26 +954,25 @@ impl World {
             return Err(CommandError::CannotCampInTown);
         }
         let on = self.date;
+        let at = self.party_at;
         self.camped = true;
-        if let Some(journey) = self.journey {
-            Ok(vec![Event::CampedOnRoad {
+        let mut events = if let Some(journey) = self.journey {
+            vec![Event::CampedOnRoad {
                 from: journey.from,
                 to: journey.to,
                 on,
-            }])
+            }]
         } else {
-            Ok(vec![Event::Camped {
-                at: self.party_at,
-                on,
-            }])
-        }
+            vec![Event::Camped { at, on }]
+        };
+        self.advance_hours(MAKE_CAMP_HOURS, &mut events);
+        Ok(events)
     }
 
-    /// Sleep in the pitched camp. This is the night: supplies are spent,
-    /// fatigue is restored as on a camped march, and the date advances.
-    /// Spending a supply consumes it, so its consumed effects fire.
-    /// Beside the road the camped march of [`LEAGUES_PER_DAY`] follows, and
-    /// the camp is struck so the next night asks again.
+    /// Sleep in the pitched camp for [`REST_HOURS`]. This is the night:
+    /// supplies are spent, consumed effects fire, and fatigue is restored as
+    /// on a camped road. The camp stays pitched. The clock moves eight hours,
+    /// and the date rolls only when those hours cross midnight.
     fn rest(&mut self) -> Result<Vec<Event>, CommandError> {
         if !self.camped {
             return Err(CommandError::NotCamped);
@@ -944,7 +985,6 @@ impl World {
         self.restore_on_road();
         self.penalize_missing_supplies(spent_food, spent_water, spent_wood);
         let fatigue = self.member_fatigue();
-        self.nights_without_camp = 0;
 
         let mut events = vec![Event::Rested {
             at,
@@ -957,13 +997,7 @@ impl World {
         events.extend(food_effects);
         events.extend(water_effects);
         events.extend(wood_effects);
-        if let Some(mut journey) = self.journey {
-            self.camped = false;
-            self.walk_day(&mut journey, &mut events, LEAGUES_PER_DAY);
-        } else {
-            self.date = self.date.next_day();
-            events.push(Event::DayPassed { date: self.date });
-        }
+        self.advance_hours(REST_HOURS, &mut events);
         Ok(events)
     }
 
@@ -971,11 +1005,12 @@ impl World {
         if !self.camped {
             return Err(CommandError::NotCamped);
         }
+        let on = self.date;
+        let at = self.party_at;
         self.camped = false;
-        Ok(vec![Event::PackedUp {
-            at: self.party_at,
-            on: self.date,
-        }])
+        let mut events = vec![Event::PackedUp { at, on }];
+        self.advance_hours(PACK_UP_HOURS, &mut events);
+        Ok(events)
     }
 
     /// How many of `item_type` the party carries.

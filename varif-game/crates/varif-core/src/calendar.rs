@@ -1,6 +1,8 @@
 //! The calendar: eight months and five weekdays.
 //!
-//! A month is fifty days (ten five-day weeks). Eight months make a 400-day year.
+//! A month is fifty days (ten five-day weeks). Eight months make a 400-day
+//! year. A day is twenty-four hours. The hour itself is kept on the world,
+//! beside the date. The week runs Arden through Seldyn.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -13,6 +15,10 @@ pub const WEEKDAYS: [&str; 5] = ["Arden", "Bhurden", "Fiurden", "Dereden", "Seld
 
 pub const DAYS_PER_MONTH: u32 = 50;
 pub const DAYS_PER_YEAR: u32 = DAYS_PER_MONTH * MONTHS.len() as u32;
+/// Arden through Seldyn.
+pub const DAYS_PER_WEEK: u32 = WEEKDAYS.len() as u32;
+/// Hours in a day. The world clock rolls the date when this is crossed.
+pub const HOURS_PER_DAY: u32 = 24;
 
 /// A day in the zdy reckoning.
 ///

@@ -1,11 +1,12 @@
 //! The state of the world: tables of places, roads and people, plus the party.
 
-use crate::calendar::Date;
+use crate::calendar::{Date, DAYS_PER_YEAR, HOURS_PER_DAY};
 use crate::character::Character;
 use crate::faction::{FactionId, Hostility};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::{DialogueLine, Standing};
 use crate::rng::Rng;
+use crate::schedule::{Schedule, Whereabouts};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,7 +132,8 @@ pub struct Road {
     pub a: PlaceId,
     pub b: PlaceId,
     pub leagues: u32,
-    /// The chance out of 100, on each day of travel, of an encounter.
+    /// The chance out of 100 of an encounter, once for each calendar day a
+    /// travel order spends on this road.
     pub encounter_chance: u32,
 }
 
@@ -140,12 +142,9 @@ impl Road {
         (self.a == x && self.b == y) || (self.a == y && self.b == x)
     }
 
-    /// How many days a camped march takes. Pressing on can finish the road
-    /// in fewer calendar days; that is settled while the party walks.
-    pub fn days(&self) -> u32 {
+    /// How many hours the road takes. One league takes one hour.
+    pub fn hours(self) -> u32 {
         self.leagues
-            .div_ceil(crate::command::LEAGUES_PER_DAY)
-            .max(1)
     }
 
     /// The far end of the road as seen from `from`, if the road touches it.
@@ -166,8 +165,8 @@ pub struct Route {
     pub to: PlaceId,
     /// The total length of the route.
     pub leagues: u32,
-    /// How many days the walk takes, road by road.
-    pub days: u32,
+    /// How many hours the walk takes, at one league an hour.
+    pub hours: u32,
     /// How many roads the route walks.
     pub roads: u32,
     /// The neighbouring place to travel to first.
@@ -182,8 +181,8 @@ pub struct Itinerary {
     /// the place it sets out from is left out.
     pub stops: Vec<PlaceId>,
     pub leagues: u32,
-    /// How many days the walk takes, road by road.
-    pub days: u32,
+    /// How many hours the walk takes, at one league an hour.
+    pub hours: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +211,12 @@ pub struct Person {
     /// Lines only this person has, on top of the world's general dialogue.
     #[serde(default)]
     pub dialogue: Vec<DialogueLine>,
+    /// Where they are across the hours. Empty for someone who stays at
+    /// [`Person::at`]. Replaced at runtime with [`crate::Command::SetSchedule`].
+    /// A lookup reads this schedule and the world clock; it does not tick
+    /// anyone forward.
+    #[serde(default)]
+    pub schedule: Schedule,
 }
 
 impl Person {
@@ -228,12 +233,9 @@ impl Person {
     }
 }
 
-/// A walk that is under way. Between days the party waits on the road for
-/// the player to say whether it camps for the night.
-///
-/// A camped day covers [`crate::command::LEAGUES_PER_DAY`] leagues. Pressing
-/// on covers more, so the march is kept in leagues and the party arrives on
-/// however many calendar days it actually spends.
+/// A walk that is under way. The player orders a number of hours. That order
+/// covers that many leagues, one an hour, then stops. The party may camp,
+/// sleep, and pack up before the next order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Journey {
     pub from: PlaceId,
@@ -246,19 +248,9 @@ pub struct Journey {
 }
 
 impl Journey {
-    /// Leagues still ahead.
+    /// Leagues still ahead. At one league an hour, this is also the hours left.
     pub fn leagues_left(self) -> u32 {
         self.leagues.saturating_sub(self.leagues_walked)
-    }
-
-    /// Calendar days the rest of the road would take at a camped march.
-    pub fn days_left(self) -> u32 {
-        let left = self.leagues_left();
-        if left == 0 {
-            0
-        } else {
-            left.div_ceil(crate::command::LEAGUES_PER_DAY)
-        }
     }
 }
 
@@ -276,6 +268,10 @@ pub struct JournalEntry {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct World {
     pub date: Date,
+    /// The hour of the day, from 0 to 23. Serialized with the date. Actions
+    /// advance it, and crossing 24 rolls [`World::date`] with the calendar.
+    #[serde(default)]
+    pub hour: u32,
     pub rng: Rng,
     pub places: Vec<Place>,
     pub roads: Vec<Road>,
@@ -290,16 +286,9 @@ pub struct World {
     pub camped: bool,
     pub journal: Vec<JournalEntry>,
     /// The walk in progress, if the party is between places. While it is
-    /// `Some`, the world waits for camp, sleep, pack up, or pressing on.
+    /// `Some`, the next travel order continues toward `to`.
     #[serde(default)]
     pub journey: Option<Journey>,
-    /// Nights in a row the party has pressed on without sleeping. The next
-    /// press is night `nights_without_camp + 1`: it costs more fatigue and
-    /// adds fewer extra leagues as the streak grows. Sleeping in camp, and a
-    /// night at an inn or a residence, sets this back to zero. Pitching camp
-    /// does not.
-    #[serde(default)]
-    pub nights_without_camp: u32,
     /// How hostile each faction is toward each other faction right now.
     /// A new world starts from [`FactionId::starting_hostility`], and the
     /// numbers change with the world.
@@ -368,22 +357,22 @@ impl World {
         let mut routes: Vec<Itinerary> = found
             .into_iter()
             .map(|stops| {
-                let (mut leagues, mut days) = (0, 0);
+                let (mut leagues, mut hours) = (0, 0);
                 let mut at = from;
                 for &next in &stops {
                     let road = self.road_between(at, next).expect("the search walks roads");
                     leagues += road.leagues;
-                    days += road.days();
+                    hours += road.hours();
                     at = next;
                 }
                 Itinerary {
                     stops,
                     leagues,
-                    days,
+                    hours,
                 }
             })
             .collect();
-        routes.sort_by_key(|r| (r.days, r.leagues, r.stops.len()));
+        routes.sort_by_key(|r| (r.hours, r.leagues, r.stops.len()));
         routes
     }
 
@@ -425,7 +414,7 @@ impl World {
         best[from.index()] = Some(Route {
             to: from,
             leagues: 0,
-            days: 0,
+            hours: 0,
             roads: 0,
             first_step: from,
         });
@@ -443,7 +432,7 @@ impl World {
                 let candidate = Route {
                     to,
                     leagues: here.leagues + road.leagues,
-                    days: here.days + road.days(),
+                    hours: here.hours + road.hours(),
                     roads: here.roads + 1,
                     first_step: if here.roads == 0 { to } else { here.first_step },
                 };
@@ -567,8 +556,35 @@ impl World {
     /// Reads a world written by [`World::to_ron`].
     pub fn from_ron(text: &str) -> Result<World, String> {
         let mut world: World = ron::from_str(text).map_err(|e| e.to_string())?;
+        world.settle_hour();
         world.grant_follower_factions();
         Ok(world)
+    }
+
+    /// Folds an hour of 24 or more into the date, so the clock stays at 0–23.
+    fn settle_hour(&mut self) {
+        let total = u64::from(self.hour);
+        let days = (total / u64::from(HOURS_PER_DAY)) as u32;
+        self.hour = (total % u64::from(HOURS_PER_DAY)) as u32;
+        if days > 0 {
+            self.date = self.date.plus_days(days);
+        }
+    }
+
+    /// Hours from hour 0 of year 0 to the current date and hour.
+    pub fn absolute_hour(&self) -> u64 {
+        let days = u64::from(self.date.year) * u64::from(DAYS_PER_YEAR)
+            + u64::from(self.date.day_of_year);
+        days * u64::from(HOURS_PER_DAY) + u64::from(self.hour)
+    }
+
+    /// Where `id`'s schedule puts them at the current hour.
+    ///
+    /// `None` for an unknown person and for a person with an empty schedule.
+    /// The result is [`Schedule::at`] on that one schedule, so other people
+    /// are not visited and nobody is moved.
+    pub fn whereabouts(&self, id: PersonId) -> Option<Whereabouts> {
+        self.person(id)?.schedule.at(self.absolute_hour())
     }
 
     /// How hostile `from` is toward `toward` at this moment.

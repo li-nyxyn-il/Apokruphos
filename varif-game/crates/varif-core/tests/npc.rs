@@ -22,12 +22,17 @@ fn person(world: &World, key: &str) -> PersonId {
 
 fn walk(world: &mut World, stop: &str) {
     let to = world.find_place(stop).unwrap();
-    world.apply(Command::Travel { to }).unwrap();
-    while world.journey.is_some() {
-        if world.camped {
-            world.apply(Command::PackUp).unwrap();
-        }
-        world.apply(Command::EndDay { camp: false }).unwrap();
+    while world.party_at != to || world.journey.is_some() {
+        let left = world
+            .journey
+            .map(|journey| journey.leagues_left())
+            .unwrap_or_else(|| world.road_between(world.party_at, to).unwrap().leagues);
+        world
+            .apply(Command::Travel {
+                to,
+                hours: left.min(8),
+            })
+            .unwrap();
     }
 }
 
@@ -196,7 +201,10 @@ fn interacting_opens_a_conversation_with_the_lines_on_offer() {
     let before = world.clone();
     let falls = world.find_place("falls").unwrap();
     assert_eq!(
-        world.apply(Command::Travel { to: falls }),
+        world.apply(Command::Travel {
+            to: falls,
+            hours: 8,
+        }),
         Err(CommandError::InConversation)
     );
     assert_eq!(
@@ -214,7 +222,12 @@ fn interacting_opens_a_conversation_with_the_lines_on_offer() {
         [Event::ConversationEnded { person: jonnoj }]
     );
     assert_eq!(world.conversation, None);
-    world.apply(Command::Travel { to: falls }).unwrap();
+    world
+        .apply(Command::Travel {
+            to: falls,
+            hours: 8,
+        })
+        .unwrap();
 }
 
 #[test]

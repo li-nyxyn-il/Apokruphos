@@ -259,6 +259,8 @@ struct App {
     /// The name and distance of the place being added.
     new_place: String,
     new_leagues: u32,
+    /// How many hours the next travel order lasts. One hour is one league.
+    travel_hours: u32,
     save_path: String,
     /// The result of the last save or load.
     status: String,
@@ -309,6 +311,7 @@ impl App {
             draft: String::new(),
             new_place: String::new(),
             new_leagues: 3,
+            travel_hours: 8,
             save_path: "save.ron".to_string(),
             status: String::new(),
             tab: Tab::Map,
@@ -409,7 +412,8 @@ impl App {
         self.offers.clear();
         if to == here || self.world.road_between(here, to).is_some() {
             self.heading.clear();
-            self.send(Command::Travel { to });
+            let hours = self.hours_toward(to);
+            self.send(Command::Travel { to, hours });
             return;
         }
         let mut routes = self.world.routes_between(here, to);
@@ -426,16 +430,29 @@ impl App {
         }
     }
 
-    /// Walks the first leg of a way and remembers the stops still to come.
+    /// Walks the first leg of a way for the chosen number of hours and
+    /// remembers the stops still to come.
     fn set_out(&mut self, stops: Vec<PlaceId>) {
         self.heading.clear();
         // An offer not answered before leaving is left behind.
         self.offers.clear();
         if let Some((&first, rest)) = stops.split_first() {
-            if self.send(Command::Travel { to: first }) {
+            let hours = self.hours_toward(first);
+            if self.send(Command::Travel { to: first, hours }) {
                 self.heading = rest.to_vec();
             }
         }
+    }
+
+    /// The hours of the next order, never more than the leagues of a direct
+    /// road and never zero.
+    fn hours_toward(&self, to: PlaceId) -> u32 {
+        let leagues = self
+            .world
+            .road_between(self.world.party_at, to)
+            .map(|road| road.leagues)
+            .unwrap_or(self.travel_hours.max(1));
+        self.travel_hours.clamp(1, leagues.max(1))
     }
 
     fn save(&mut self) {
@@ -732,7 +749,7 @@ impl App {
     fn play_wide(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
         egui::Panel::top("top_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.heading(self.world.date.to_string());
+                ui.heading(format!("{}, hour {}", self.world.date, self.world.hour));
                 ui.separator();
                 self.save_controls(ui, action);
                 ui.label(&self.status);
@@ -771,7 +788,7 @@ impl App {
     fn play_compact(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
         egui::Panel::top("top_bar_compact").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.strong(self.world.date.to_string());
+                ui.strong(format!("{}, hour {}", self.world.date, self.world.hour));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("Save / Load", |ui| {
                         ui.set_min_width(220.0);
@@ -859,7 +876,7 @@ impl App {
             .id_salt("place_scroll")
             .show(ui, |ui| {
                 ui.add_enabled_ui(!locked, |ui| {
-                    place_panel(ui, &self.world, action);
+                    place_panel(ui, &self.world, &mut self.travel_hours, action);
                     ui.separator();
                     ui.strong("Add a place");
                     ui.add(egui::TextEdit::singleline(&mut self.new_place).hint_text("Name"));
@@ -900,13 +917,14 @@ impl App {
             || !self.heading.is_empty()
     }
 
-    fn ask(&self, ui: &mut egui::Ui, action: &mut Option<Action>) {
+    fn ask(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
         question(
             ui,
             &self.world,
             &self.offers,
             &self.ways,
             &self.heading,
+            &mut self.travel_hours,
             action,
         );
     }
@@ -921,6 +939,7 @@ fn question(
     offers: &[PersonId],
     ways: &Option<(PlaceId, Vec<Itinerary>, usize)>,
     heading: &[PlaceId],
+    hours: &mut u32,
     action: &mut Option<Action>,
 ) {
     if let Some(journey) = world.journey {
@@ -936,18 +955,21 @@ fn question(
                     }
                 });
             } else {
-                let left = journey.days_left();
+                let left = journey.leagues_left().max(1);
                 ui.strong(format!(
-                    "Night falls on the road, {} from {}.",
-                    days(left),
+                    "On the road, {left} leagues from {}.",
                     world.place_name(journey.to)
                 ));
+                ui.add(egui::Slider::new(hours, 1..=left).text("hours"));
                 ui.horizontal(|ui| {
+                    if ui.button("Travel").clicked() {
+                        *action = Some(Action::Send(Command::Travel {
+                            to: journey.to,
+                            hours: (*hours).clamp(1, left),
+                        }));
+                    }
                     if ui.button("Make camp").clicked() {
                         *action = Some(Action::Send(Command::MakeCamp));
-                    }
-                    if ui.button("Press on").clicked() {
-                        *action = Some(Action::Send(Command::EndDay { camp: false }));
                     }
                 });
             }
@@ -1002,7 +1024,7 @@ fn question(
                 let label = format!(
                     "Through {passing}: {} leagues, {}",
                     route.leagues,
-                    days(route.days)
+                    hours_label(route.hours)
                 );
                 if ui.button(label).clicked() {
                     *action = Some(Action::TakeWay(index));
@@ -1032,7 +1054,12 @@ fn question(
 
 /// The left panel: where the party is, the sites inside the place, and the
 /// roads out.
-fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
+fn place_panel(
+    ui: &mut egui::Ui,
+    world: &World,
+    hours: &mut u32,
+    action: &mut Option<Action>,
+) {
     let here = world.party_at;
     let Some(place) = world.place(here) else {
         ui.label("The party is nowhere.");
@@ -1122,6 +1149,7 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
 
     ui.separator();
     ui.strong("Roads");
+    ui.add(egui::Slider::new(hours, 1..=24).text("hours to travel"));
     let neighbours = world.neighbours(here);
     if neighbours.is_empty() {
         ui.weak("No road leads anywhere from here.");
@@ -1131,10 +1159,11 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
             "{}: {} leagues, {}",
             world.place_name(to),
             road.leagues,
-            days(road.days())
+            hours_label(road.hours())
         );
         if ui.button(label).clicked() {
-            *action = Some(Action::Send(Command::Travel { to }));
+            let ordered = (*hours).clamp(1, road.leagues.max(1));
+            *action = Some(Action::Send(Command::Travel { to, hours: ordered }));
         }
     }
 
@@ -1151,7 +1180,7 @@ fn place_panel(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
                 "{}: {} leagues, {}",
                 world.place_name(route.to),
                 route.leagues,
-                days(route.days)
+                hours_label(route.hours)
             );
             let button = ui
                 .button(label)
@@ -1265,28 +1294,22 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
         }
     }
     ui.horizontal(|ui| {
-        if ui.button("Make camp").clicked() {
+        if ui.button("Make camp (1 hour)").clicked() {
             *action = Some(Action::Send(Command::MakeCamp));
         }
-        if ui.button("Sleep").clicked() {
+        if ui.button("Sleep (8 hours)").clicked() {
             *action = Some(Action::Send(Command::Rest));
         }
-        if ui.button("Pack up").clicked() {
+        if ui.button("Pack up (1 hour)").clicked() {
             *action = Some(Action::Send(Command::PackUp));
         }
-        if at_a_bed(world) && ui.button("Sleep at the inn").clicked() {
+        if at_a_bed(world) && ui.button("Sleep a day").clicked() {
             *action = Some(Action::Send(Command::Sleep));
         }
         if world.camped {
             ui.label("Camped.");
         }
     });
-    if world.nights_without_camp > 0 {
-        ui.label(format!(
-            "{} without camp.",
-            nights(world.nights_without_camp)
-        ));
-    }
 
     ui.separator();
     ui.heading("Journal");
@@ -1401,7 +1424,7 @@ fn map(
                     "Go to {}: {} leagues, {}",
                     place.name,
                     route.leagues,
-                    days(route.days)
+                    hours_label(route.hours)
                 ));
             if node.clicked() {
                 *action = Some(Action::GoTo(id));
@@ -1493,26 +1516,29 @@ fn describe(world: &World, event: &Event) -> String {
         ),
         Event::DayPassed { date } => format!("    {date}"),
         Event::RoadEncounter { .. } => "    Something meets the party on the road.".to_string(),
-        Event::NightFalls { to, days_left, .. } => format!(
-            "Night falls on the road, {} from {}.",
-            days(*days_left),
-            world.place_name(*to)
-        ),
-        Event::CampedOnRoad { .. } => "The party makes camp beside the road.".to_string(),
-        Event::PressedOn {
-            nights_without_camp,
-            extra_leagues,
+        Event::Traveled {
+            to,
+            leagues,
+            leagues_left,
+            hours,
             fatigue,
             ..
         } => {
-            let night = match nights_without_camp {
-                1 => "The party presses on through the night".to_string(),
-                n => format!("The party presses on through the night, {n} nights without camp"),
+            let stop = if *leagues_left == 0 {
+                String::new()
+            } else {
+                format!(
+                    " It stops with {leagues_left} leagues left to {}.",
+                    world.place_name(*to)
+                )
             };
             format!(
-                "{night}, covering {extra_leagues} extra leagues.{}",
+                "The party travels {leagues} leagues in {hours} hours.{stop}{}",
                 fatigue_note(world, fatigue)
             )
+        }
+        Event::CampedOnRoad { .. } => {
+            "The party makes camp beside the road. An hour passes.".to_string()
         }
         Event::Arrived { at, .. } => format!("The party arrives at {}.", world.place_name(*at)),
         Event::EnteredBy { at, gate, .. } => {
@@ -1529,9 +1555,10 @@ fn describe(world: &World, event: &Event) -> String {
                 None => format!("The party walks to the {}.", site_name(place, *to)),
             }
         }
-        Event::Camped { at, .. } => {
-            format!("The party makes camp at {}.", world.place_name(*at))
-        }
+        Event::Camped { at, .. } => format!(
+            "The party makes camp at {}. An hour passes.",
+            world.place_name(*at)
+        ),
         Event::Rested {
             at,
             fatigue,
@@ -1540,14 +1567,15 @@ fn describe(world: &World, event: &Event) -> String {
             spent_wood,
             ..
         } => format!(
-            "The party sleeps in camp at {}.{}{}",
+            "The party sleeps eight hours in camp at {}.{}{}",
             world.place_name(*at),
             camp_note(*spent_food, *spent_water, *spent_wood),
             fatigue_note(world, fatigue)
         ),
-        Event::PackedUp { at, .. } => {
-            format!("The party packs up the camp at {}.", world.place_name(*at))
-        }
+        Event::PackedUp { at, .. } => format!(
+            "The party packs up the camp at {}. An hour passes.",
+            world.place_name(*at)
+        ),
         Event::Slept {
             at,
             site,
@@ -1648,6 +1676,9 @@ fn describe(world: &World, event: &Event) -> String {
             leagues,
             world.place_name(*from)
         ),
+        Event::ScheduleChanged { person } => {
+            format!("{} keeps a new schedule.", person_name(world, *person))
+        }
     }
 }
 
@@ -1721,18 +1752,10 @@ fn through(world: &World, stops: &[PlaceId]) -> String {
         .join(", ")
 }
 
-fn days(count: u32) -> String {
+fn hours_label(count: u32) -> String {
     if count == 1 {
-        "1 day".to_string()
+        "1 hour".to_string()
     } else {
-        format!("{count} days")
-    }
-}
-
-fn nights(count: u32) -> String {
-    if count == 1 {
-        "1 night".to_string()
-    } else {
-        format!("{count} nights")
+        format!("{count} hours")
     }
 }
