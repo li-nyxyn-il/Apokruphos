@@ -3,12 +3,13 @@
 //! Data files name places by key ("yhlgrym"), which is pleasant to write by
 //! hand. Loading checks the file and turns every key into an ID.
 
-use crate::calendar::Date;
+use crate::calendar::{Date, HOURS_PER_DAY};
 use crate::character::{Character, SheetError};
 use crate::faction::Hostility;
 use crate::ids::PlaceId;
 use crate::npc::DialogueLine;
 use crate::rng::Rng;
+use crate::schedule::{RoadLeg, Schedule, Span, Whereabouts};
 use crate::world::{Person, Place, Road, SiteKind, World};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -31,6 +32,9 @@ struct StartData {
     year: u32,
     month: u32,
     day: u32,
+    /// Hour of the day, 0 to 23. Omitted files start at hour 0.
+    #[serde(default)]
+    hour: u32,
     seed: u64,
     party_at: String,
 }
@@ -61,6 +65,28 @@ struct PersonData {
     sheet: Option<Character>,
     #[serde(default)]
     dialogue: Vec<DialogueLine>,
+    #[serde(default)]
+    schedule: ScheduleData,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ScheduleData {
+    #[serde(default)]
+    spans: Vec<SpanData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpanData {
+    hours: u32,
+    place: String,
+    #[serde(default)]
+    site: Option<String>,
+    /// The place key the NPC is walking from, when the span is travel.
+    #[serde(default)]
+    road_from: Option<String>,
+    /// The place key the NPC is walking toward, when the span is travel.
+    #[serde(default)]
+    road_to: Option<String>,
 }
 
 /// What is wrong with a data file.
@@ -71,6 +97,10 @@ pub enum DataError {
         year: u32,
         month: u32,
         day: u32,
+    },
+    /// The start hour was not from 0 to 23.
+    BadStartHour {
+        hour: u32,
     },
     DuplicatePlace(String),
     DuplicatePerson(String),
@@ -110,6 +140,14 @@ pub enum DataError {
         person: String,
         place: String,
     },
+    /// A schedule span lasts no hours.
+    EmptySpan {
+        person: String,
+    },
+    /// A travel span named one end of the road and not the other.
+    RoadNeedsTwoEnds {
+        person: String,
+    },
 }
 
 impl fmt::Display for DataError {
@@ -118,6 +156,9 @@ impl fmt::Display for DataError {
             DataError::Parse(message) => write!(f, "the file could not be read: {message}"),
             DataError::BadStartDate { year, month, day } => {
                 write!(f, "the start date {day}/{month}/{year} is not a real date")
+            }
+            DataError::BadStartHour { hour } => {
+                write!(f, "the start hour {hour} is not from 0 to 23")
             }
             DataError::DuplicatePlace(key) => write!(f, "two places share the key \"{key}\""),
             DataError::DuplicatePerson(key) => write!(f, "two people share the key \"{key}\""),
@@ -151,6 +192,15 @@ impl fmt::Display for DataError {
             } => write!(f, "{person} names a site \"{site}\" that is not in {place}"),
             DataError::MissingSite { person, place } => {
                 write!(f, "{person} is in {place} but names no site")
+            }
+            DataError::EmptySpan { person } => {
+                write!(f, "a span in {person}'s schedule lasts no hours")
+            }
+            DataError::RoadNeedsTwoEnds { person } => {
+                write!(
+                    f,
+                    "a travel span in {person}'s schedule names one end of the road and not the other"
+                )
             }
         }
     }
@@ -207,6 +257,9 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         month: start.month,
         day: start.day,
     })?;
+    if start.hour >= HOURS_PER_DAY {
+        return Err(DataError::BadStartHour { hour: start.hour });
+    }
     let party_at = lookup(&start.party_at, "the start")?;
     let party_site = data.places[party_at.index()].gate_for(None);
 
@@ -268,6 +321,12 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
                 owner: format!("{}'s dialogue", person.name),
             });
         }
+        let schedule = load_schedule(
+            &person.name,
+            &person.schedule,
+            &data.places,
+            &lookup,
+        )?;
         let place = &data.places[at.index()];
         let site = match person.site.as_deref() {
             Some(key) => Some(place.find_site(key).ok_or_else(|| DataError::UnknownSite {
@@ -293,11 +352,13 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             sheet: person.sheet,
             dialogue: person.dialogue,
             site,
+            schedule,
         });
     }
 
     Ok(World {
         date,
+        hour: start.hour,
         rng: Rng::new(start.seed),
         places: data.places,
         roads,
@@ -307,9 +368,59 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         camped: false,
         journal: Vec::new(),
         journey: None,
-        nights_without_camp: 0,
         hostility: Hostility::starting(),
         dialogue: data.dialogue,
         conversation: None,
     })
+}
+
+/// Turns schedule keys into ids. A span of zero hours is refused. A travel
+/// span names both ends of the road or neither.
+fn load_schedule(
+    person: &str,
+    data: &ScheduleData,
+    places: &[Place],
+    lookup: &impl Fn(&str, &str) -> Result<PlaceId, DataError>,
+) -> Result<Schedule, DataError> {
+    let mut spans = Vec::with_capacity(data.spans.len());
+    for span in &data.spans {
+        if span.hours == 0 {
+            return Err(DataError::EmptySpan {
+                person: person.to_string(),
+            });
+        }
+        let place = lookup(&span.place, &format!("{person}'s schedule"))?;
+        let site = match span.site.as_deref() {
+            Some(key) => {
+                let place_data = &places[place.index()];
+                Some(place_data.find_site(key).ok_or_else(|| DataError::UnknownSite {
+                    person: person.to_string(),
+                    place: place_data.name.clone(),
+                    site: key.to_string(),
+                })?)
+            }
+            None => None,
+        };
+        let on_the_road = match (&span.road_from, &span.road_to) {
+            (None, None) => None,
+            (Some(from), Some(to)) => Some(RoadLeg {
+                from: lookup(from, &format!("{person}'s schedule"))?,
+                to: lookup(to, &format!("{person}'s schedule"))?,
+            }),
+            _ => {
+                return Err(DataError::RoadNeedsTwoEnds {
+                    person: person.to_string(),
+                })
+            }
+        };
+        spans.push(Span {
+            hours: span.hours,
+            whereabouts: Whereabouts {
+                place,
+                site,
+                on_the_road,
+            },
+        });
+    }
+    Ok(Schedule { spans })
 }

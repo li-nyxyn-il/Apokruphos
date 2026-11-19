@@ -65,13 +65,13 @@ Inside `varif-core/src`:
 - **Things refer to each other by ID.** A person stores a `PlaceId`, not a reference to a place.
 - **Change goes through commands.** A front end calls `world.apply(command)` and gets back a list of events, or an error that changed nothing.
 - **It is deterministic.** The random number generator is part of the world, so the same seed and commands always give the same history.
-- **The calendar.** Eight months of 50 days, so a year is 400 days.
+- **The calendar.** Eight months of 50 days, so a year is 400 days. A day is 24 hours, kept on the world beside the date. The week is five days, Arden through Seldyn.
 
 ## Placeholders to replace
 
 These are marked `ASSUMPTION` in the code and data:
 
-- **Travel speed:** 9 leagues a day for a camped march, in `command.rs`. Pressing on covers more.
+- **Travel speed:** one league an hour. An order of eight hours or fewer adds no fatigue. Each hour past that costs the next number, summed once for the order: 1 extra costs 1, 2 extra cost 3, 3 extra cost 6, so `n` extra hours cost `n * (n + 1) / 2`. Pitching camp takes an hour, sleeping in camp takes eight, and packing up takes an hour. An NPC's whereabouts are a repeating cycle of spans on that person, looked up from the clock.
 - **Distances and encounter chances:** every road in `data/first_leg.ron`.
 - **Start date:** 1 Jhuze 192 zdy.
 - **The cast:** one stand-in person, "The Pylgrym".

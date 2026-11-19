@@ -17,19 +17,36 @@ fn person(world: &World, key: &str) -> PersonId {
     PersonId(index as u32)
 }
 
-/// Walks to each stop in turn, making camp every night.
+/// Walks to each stop in turn, eight hours at a time.
 fn walk(world: &mut World, stops: &[&str]) -> Vec<Event> {
     let mut events = Vec::new();
     for stop in stops {
         let to = world.find_place(stop).expect("the stop should exist");
-        events.extend(
-            world
-                .apply(Command::Travel { to })
-                .expect("the road should exist"),
-        );
-        while world.journey.is_some() {
-            events.extend(world.apply(Command::MakeCamp).unwrap());
-            events.extend(world.apply(Command::Rest).unwrap());
+        loop {
+            let left = if let Some(journey) = world.journey {
+                journey.leagues_left()
+            } else if world.party_at == to {
+                break;
+            } else {
+                world
+                    .road_between(world.party_at, to)
+                    .expect("the road should exist")
+                    .leagues
+            };
+            if left == 0 {
+                break;
+            }
+            events.extend(
+                world
+                    .apply(Command::Travel {
+                        to,
+                        hours: left.min(8),
+                    })
+                    .expect("the road should exist"),
+            );
+            if world.journey.is_none() {
+                break;
+            }
         }
     }
     events
