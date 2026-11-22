@@ -1,9 +1,11 @@
 [[Hylvynhani Falls]]
 [[Hylhaim-Shentzli]]
 [[Heedhaim]]
-[[Atzchaim Hall]]
+[[Atzch Lake Hall|Atzchaim Hall]]
 [[Atzchelm-Ivhaan]]
 [[Atzch-Midili]]
-[[Drazilhaim-Hylhelm]]
+[[Drazihaim Hylhelm]]
 [[Coplahaim]]
 [[Koratzch]]
+
+Jurisdictions (Pynumbra, province, county): [[Umbara]]

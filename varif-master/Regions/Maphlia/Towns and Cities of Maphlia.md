@@ -2,10 +2,10 @@
 [[Edun]]
 [[Laad]]
 [[Hases]]
-[[Clate]]
+[[Klate]]
 [[Myvus]]
-[[Vlenen]]
-[[Dannon]]
+[[Vienen|Vlenen]]
+[[Danon|Dannon]]
 [[Corvus]]
 [[Iden]]
 [[Seawalt 1]]
@@ -17,3 +17,4 @@
 [[Idra]]
 [[Bahour-Ilos]]
 
+Jurisdictions (Pynumbra, province, county): [[Umbara]]
