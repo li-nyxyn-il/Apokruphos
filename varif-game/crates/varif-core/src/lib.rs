@@ -28,8 +28,9 @@ pub use character::{
     SUPPLY_VALUE, SUPPLY_WEIGHT,
 };
 pub use command::{
-    travel_fatigue, AdvanceKind, ClockAdvance, Command, CommandError, Event, MemberFatigue,
-    MAKE_CAMP_HOURS, PACK_UP_HOURS, REST_HOURS, UNTIRED_HOURS,
+    game_minutes, real_ms_until_next_game_minute, travel_fatigue, AdvanceKind, ClockAdvance,
+    Command, CommandError, Event, MemberFatigue, MAKE_CAMP_HOURS, MAX_TIME_SCALE, MIN_TIME_SCALE,
+    PACK_UP_HOURS, REST_HOURS, UNTIRED_HOURS,
 };
 pub use data::{load_world, DataError};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};

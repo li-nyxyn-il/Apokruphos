@@ -66,7 +66,7 @@ Inside `varif-core/src`:
 - **Things refer to each other by ID.** A person stores a `PlaceId`, not a reference to a place.
 - **Change goes through commands.** A front end calls `world.apply(command)` and gets back a list of events, or an error that changed nothing.
 - **It is deterministic.** The random number generator is part of the world, so the same seed and commands always give the same history.
-- **The calendar.** Eight months of 50 days, so a year is 400 days. A day is 24 hours of 60 minutes. The date, hour, and minute are one clock on the world. Real time moves when the host passes elapsed minutes to `World::advance`; turn-based time ignores that and moves only when a command spends it, or on an explicit step. The week is five days, Arden through Seldyn.
+- **The calendar.** Eight months of 50 days, so a year is 400 days. A day is 24 hours of 60 minutes. The date, hour, and minute are one clock on the world. Real time moves when the host passes elapsed minutes to `World::advance`; turn-based time ignores that and moves only when a command spends it, or on an explicit step. A time scale from 1 to 60 is how many game minutes pass in one real minute. It does not shorten camp, sleep, travel, wait, or step. The week is five days, Arden through Seldyn.
 
 ## Placeholders to replace
 

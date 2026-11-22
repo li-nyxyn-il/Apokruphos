@@ -32,7 +32,8 @@ use std::{env, fs, path::Path, process};
 use varif_core::{
     load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
     MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
-    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
+    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_TIME_SCALE, MIN_AGE,
+    MIN_TIME_SCALE,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -267,8 +268,9 @@ struct App {
     travel_hours: u32,
     /// How many hours the next wait lasts, from 1 to 24.
     wait_hours: u32,
-    /// Seconds of real time not yet handed to the world as whole minutes.
-    real_seconds: f32,
+    /// Real milliseconds not yet handed to the world as a whole game minute.
+    /// The world's time scale turns these into game minutes.
+    real_carry_ms: u128,
     save_path: String,
     /// The result of the last save or load.
     status: String,
@@ -321,7 +323,7 @@ impl App {
             new_leagues: 3,
             travel_hours: 8,
             wait_hours: 1,
-            real_seconds: 0.0,
+            real_carry_ms: 0,
             save_path: "save.ron".to_string(),
             status: String::new(),
             tab: Tab::Map,
@@ -332,11 +334,26 @@ impl App {
 
     /// Sends one command to the world and adds what happened to the log.
     /// True if the world accepted it.
-    fn send(&mut self, command: Command) -> bool {
+    pub(crate) fn send(&mut self, command: Command) -> bool {
+        let changed_scale = matches!(command, Command::SetTimeScale { .. });
         match self.world.apply(command) {
             Ok(events) => {
+                if changed_scale {
+                    self.real_carry_ms = 0;
+                }
                 for event in &events {
-                    self.log.push(describe(&self.world, event));
+                    let line = describe(&self.world, event);
+                    let timescale = matches!(event, Event::TimeScaleChanged { .. });
+                    if timescale
+                        && self
+                            .log
+                            .last()
+                            .is_some_and(|last| last.starts_with("The clock runs at "))
+                    {
+                        *self.log.last_mut().expect("the line just checked") = line;
+                    } else {
+                        self.log.push(line);
+                    }
                     if let Event::RecruitOffered { person, .. } = event {
                         self.offers.push(*person);
                     }
@@ -738,8 +755,10 @@ impl eframe::App for App {
         // the next one. An immediate repaint would make `stable_dt` usable;
         // this wait does not, which is why the tick reads `unstable_dt`.
         if matches!(self.stage, Stage::Play) && clock::is_running(&self.world) {
-            ui.ctx()
-                .request_repaint_after(clock::until_next_minute(self.real_seconds));
+            ui.ctx().request_repaint_after(clock::until_next_minute(
+                self.real_carry_ms,
+                self.world.time_scale,
+            ));
         }
     }
 }
@@ -771,6 +790,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.heading(clock_text(&self.world));
                 clock_switch(ui, &self.world, action);
+                clock_speed(ui, &self.world, action);
                 ui.separator();
                 self.save_controls(ui, action);
                 ui.label(&self.status);
@@ -817,6 +837,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.strong(clock_text(&self.world));
                 clock_switch(ui, &self.world, action);
+                clock_speed(ui, &self.world, action);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("Save / Load", |ui| {
                         ui.set_min_width(220.0);
@@ -980,7 +1001,7 @@ impl App {
         }
         let frame_seconds = ui.input(|input| input.unstable_dt);
         let moved =
-            clock::apply_elapsed_frame(&mut self.world, &mut self.real_seconds, frame_seconds);
+            clock::apply_elapsed_frame(&mut self.world, &mut self.real_carry_ms, frame_seconds);
         for event in &moved.events {
             self.log.push(describe(&self.world, event));
         }
@@ -1744,14 +1765,15 @@ fn describe(world: &World, event: &Event) -> String {
         Event::Waited { hours, .. } => format!("The party waits {hours} hours."),
         Event::Stepped { .. } => "An hour passes.".to_string(),
         Event::TimeModeChanged { mode } => format!("The clock is now {mode}."),
+        Event::TimeScaleChanged { scale } => format!("The clock runs at {scale}× real time."),
     }
 }
 
 fn clock_text(world: &World) -> String {
     let paused = if world.clock_paused { "  paused" } else { "" };
     format!(
-        "{}, {:02}:{:02}{} ({})",
-        world.date, world.hour, world.minute, paused, world.time_mode
+        "{}, {:02}:{:02}{} ({}, {}×)",
+        world.date, world.hour, world.minute, paused, world.time_mode, world.time_scale
     )
 }
 
@@ -1763,6 +1785,29 @@ fn clock_switch(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
         .clicked()
     {
         *action = Some(Action::Send(Command::SetTimeMode { mode: next }));
+    }
+}
+
+/// The real-time speed. The slider copies the scale and sends a command.
+/// It does not write [`World::time_scale`] itself.
+fn clock_speed(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
+    let mut scale = world.time_scale.clamp(MIN_TIME_SCALE, MAX_TIME_SCALE);
+    let changed = ui
+        .scope(|ui| {
+            ui.spacing_mut().slider_width = 80.0;
+            ui.add(
+                egui::Slider::new(&mut scale, MIN_TIME_SCALE..=MAX_TIME_SCALE)
+                    .suffix("×")
+                    .text("speed"),
+            )
+        })
+        .inner
+        .on_hover_text(
+            "Game minutes for each real minute. 1× matches the wall clock. Camp, sleep, travel, and wait stay the same length.",
+        )
+        .changed();
+    if changed && scale != world.time_scale {
+        *action = Some(Action::Send(Command::SetTimeScale { scale }));
     }
 }
 

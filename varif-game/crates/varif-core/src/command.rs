@@ -33,13 +33,22 @@ pub const MIN_WAIT_HOURS: u32 = 1;
 pub const MAX_WAIT_HOURS: u32 = 24;
 /// One explicit step of the clock, in turn-based time.
 pub const STEP_HOURS: u32 = 1;
+/// One game minute per real minute. This matches the host clock.
+pub const MIN_TIME_SCALE: u32 = 1;
+/// The fastest real-time clock: one game minute per real second. Zero and
+/// anything above this are refused, and the world is left unchanged.
+pub const MAX_TIME_SCALE: u32 = 60;
+/// Real milliseconds in one game minute, before the time scale.
+const REAL_MS_PER_GAME_MINUTE: u128 = 60_000;
 
 /// Why the clock was asked to move. Every change of date, hour, or minute
 /// goes through [`World::advance`] with one of these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdvanceKind {
-    /// Minutes the host measured on its own clock. Applied only in
-    /// [`TimeMode::RealTime`], and only while the world clock is not paused.
+    /// Minutes the host measured on its own clock, already multiplied by
+    /// [`World::time_scale`]. Applied only in [`TimeMode::RealTime`], and
+    /// only while the world clock is not paused. [`World::advance`] does
+    /// not scale these minutes again.
     Elapsed,
     /// A command spends this time: camp, rest, pack, sleep, or an explicit
     /// step. Applied in either mode.
@@ -61,6 +70,37 @@ pub struct ClockAdvance {
 
 /// ASSUMPTION: the encounter chance on a road the player adds by hand.
 pub const NEW_ROAD_ENCOUNTER_CHANCE: u32 = 15;
+
+/// Whole game minutes in `real_ms` at `scale`, and the real milliseconds
+/// still short of the next one.
+///
+/// `scale` is game minutes per real minute. One matches the host clock.
+/// Zero is read as one, so a save that lost its scale still runs. Camp,
+/// sleep, travel, and the other commands do not use this. Only a host
+/// turning its own elapsed time into an [`AdvanceKind::Elapsed`] call does.
+pub fn game_minutes(real_ms: u128, scale: u32) -> (u32, u128) {
+    let scale = u128::from(scale.max(MIN_TIME_SCALE));
+    let game_ms = real_ms.saturating_mul(scale);
+    let minutes_u128 = game_ms / REAL_MS_PER_GAME_MINUTE;
+    if minutes_u128 > u128::from(u32::MAX) {
+        return (u32::MAX, 0);
+    }
+    let minutes = minutes_u128 as u32;
+    let used_real = u128::from(minutes) * REAL_MS_PER_GAME_MINUTE / scale;
+    (minutes, real_ms.saturating_sub(used_real))
+}
+
+/// Real milliseconds until the next game minute, at `scale`.
+///
+/// A host uses this to wake in time for the next minute on screen. At 1×
+/// a fresh carry waits one real minute. At 60× it waits one real second.
+pub fn real_ms_until_next_game_minute(carry_real_ms: u128, scale: u32) -> u128 {
+    let (_, rest) = game_minutes(carry_real_ms, scale);
+    let scale = u128::from(scale.max(MIN_TIME_SCALE));
+    let into = rest.saturating_mul(scale);
+    let left_game = REAL_MS_PER_GAME_MINUTE.saturating_sub(into);
+    left_game.div_ceil(scale).max(1)
+}
 
 /// Fatigue one travel order of `hours` costs. Eight hours or fewer cost
 /// nothing. `n` hours past that cost `n * (n + 1) / 2`, once, not per league.
@@ -165,6 +205,11 @@ pub enum Command {
     Step,
     /// Switch the clock between real time and turn-based.
     SetTimeMode { mode: TimeMode },
+    /// How many game minutes pass in one real minute, from
+    /// [`MIN_TIME_SCALE`] to [`MAX_TIME_SCALE`]. One matches the host clock.
+    /// This does not change camp, sleep, travel, wait, or step. Zero and
+    /// anything above the maximum are refused and leave the world unchanged.
+    SetTimeScale { scale: u32 },
 }
 
 /// Something that happened in the world as the result of a command.
@@ -356,6 +401,10 @@ pub enum Event {
     TimeModeChanged {
         mode: TimeMode,
     },
+    /// How many game minutes now pass in one real minute.
+    TimeScaleChanged {
+        scale: u32,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -429,6 +478,8 @@ pub enum CommandError {
     UnknownLine(usize),
     /// A wait was not from 1 to 24 hours.
     BadWait,
+    /// A time scale was not from 1 to 60.
+    BadTimeScale,
 }
 
 /// One party member's fatigue after a night that changed it.
@@ -502,6 +553,7 @@ impl fmt::Display for CommandError {
             CommandError::NotInConversation => write!(f, "the player is not talking to anyone"),
             CommandError::UnknownLine(n) => write!(f, "there is no line {n} to say"),
             CommandError::BadWait => write!(f, "wait from 1 to 24 hours"),
+            CommandError::BadTimeScale => write!(f, "the time scale must be from 1 to 60"),
         }
     }
 }
@@ -529,6 +581,7 @@ impl World {
                     | Command::Wait { .. }
                     | Command::Step
                     | Command::SetTimeMode { .. }
+                    | Command::SetTimeScale { .. }
                     | Command::SetHostility { .. }
                     | Command::SetAttitude { .. }
                     | Command::Equip { .. }
@@ -565,6 +618,7 @@ impl World {
             Command::Wait { hours } => self.wait(hours),
             Command::Step => self.step(),
             Command::SetTimeMode { mode } => self.set_time_mode(mode),
+            Command::SetTimeScale { scale } => self.set_time_scale(scale),
         }
     }
 
@@ -1232,6 +1286,17 @@ impl World {
     fn set_time_mode(&mut self, mode: TimeMode) -> Result<Vec<Event>, CommandError> {
         self.time_mode = mode;
         Ok(vec![Event::TimeModeChanged { mode }])
+    }
+
+    fn set_time_scale(&mut self, scale: u32) -> Result<Vec<Event>, CommandError> {
+        if !(MIN_TIME_SCALE..=MAX_TIME_SCALE).contains(&scale) {
+            return Err(CommandError::BadTimeScale);
+        }
+        if self.time_scale == scale {
+            return Ok(Vec::new());
+        }
+        self.time_scale = scale;
+        Ok(vec![Event::TimeScaleChanged { scale }])
     }
 
     /// How many of `item_type` the party carries.

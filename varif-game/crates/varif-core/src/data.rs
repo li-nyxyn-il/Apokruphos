@@ -362,6 +362,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         hour: start.hour,
         minute: 0,
         time_mode: TimeMode::TurnBased,
+        time_scale: 1,
         clock_paused: false,
         rng: Rng::new(start.seed),
         places: data.places,

@@ -295,6 +295,10 @@ impl fmt::Display for TimeMode {
     }
 }
 
+fn default_time_scale() -> u32 {
+    1
+}
+
 /// Everything that is true of the world at one moment.
 ///
 /// The fields are public so that a front end can read them freely. Change the
@@ -316,6 +320,14 @@ pub struct World {
     /// Real time or turn-based.
     #[serde(default)]
     pub time_mode: TimeMode,
+    /// Game minutes per real minute while the clock is in real time. One
+    /// matches the host clock. The host multiplies its own elapsed time by
+    /// this before calling [`World::advance`]. Camp, sleep, travel, and the
+    /// other commands that spend time are not scaled. The core does not
+    /// read the operating system clock. Change it with
+    /// [`crate::Command::SetTimeScale`].
+    #[serde(default = "default_time_scale")]
+    pub time_scale: u32,
     /// Set when an event needs the player. Real-time elapsed time does
     /// nothing while this is set. A command that spends time clears it, and
     /// sets it again if that command stops on a new event.
