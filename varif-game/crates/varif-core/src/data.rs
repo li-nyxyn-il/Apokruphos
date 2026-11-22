@@ -10,7 +10,7 @@ use crate::ids::PlaceId;
 use crate::npc::DialogueLine;
 use crate::rng::Rng;
 use crate::schedule::{RoadLeg, Schedule, Span, Whereabouts};
-use crate::world::{Person, Place, Road, SiteKind, World};
+use crate::world::{Person, Place, Road, SiteKind, TimeMode, World};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -359,6 +359,9 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
     Ok(World {
         date,
         hour: start.hour,
+        minute: 0,
+        time_mode: TimeMode::TurnBased,
+        clock_paused: false,
         rng: Rng::new(start.seed),
         places: data.places,
         roads,

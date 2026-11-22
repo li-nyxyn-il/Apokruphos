@@ -1,6 +1,6 @@
 //! Commands go in, events come out. The rules of the world live here.
 
-use crate::calendar::{Date, HOURS_PER_DAY};
+use crate::calendar::{Date, HOURS_PER_DAY, MINUTES_PER_HOUR};
 use crate::character::{
     EffectKind, EffectPayload, EquipSlot, Equipped, Item, ItemType, Role, BASE_FATIGUE,
     MAX_ATTITUDE, MIN_ATTITUDE,
@@ -9,7 +9,7 @@ use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::Standing;
 use crate::schedule::Schedule;
-use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, World};
+use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, TimeMode, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -24,6 +24,38 @@ const INN_HOURS: u32 = HOURS_PER_DAY;
 /// Hours of one travel order that add no fatigue. Each hour past this costs
 /// the next whole number, summed once for the order.
 pub const UNTIRED_HOURS: u32 = 8;
+/// The shortest wait the player can order.
+pub const MIN_WAIT_HOURS: u32 = 1;
+/// The longest wait the player can order. Zero and anything above this are
+/// refused, and the world is left unchanged.
+pub const MAX_WAIT_HOURS: u32 = 24;
+/// One explicit step of the clock, in turn-based time.
+pub const STEP_HOURS: u32 = 1;
+
+/// Why the clock was asked to move. Every change of date, hour, or minute
+/// goes through [`World::advance`] with one of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AdvanceKind {
+    /// Minutes the host measured on its own clock. Applied only in
+    /// [`TimeMode::RealTime`], and only while the world clock is not paused.
+    Elapsed,
+    /// A command spends this time: camp, rest, pack, sleep, or an explicit
+    /// step. Applied in either mode.
+    Spend,
+    /// Travel or wait. A road encounter can stop this before the order ends.
+    Pass,
+}
+
+/// How far [`World::advance`] actually moved the clock.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockAdvance {
+    /// Minutes added to the clock. Less than the request when a pause hook
+    /// stopped the advance early.
+    pub minutes: u32,
+    pub events: Vec<Event>,
+    /// True when a pause hook stopped the advance before the request was done.
+    pub stopped: bool,
+}
 
 /// ASSUMPTION: the encounter chance on a road the player adds by hand.
 pub const NEW_ROAD_ENCOUNTER_CHANCE: u32 = 15;
@@ -116,7 +148,20 @@ pub enum Command {
     /// Leave the conversation.
     EndConversation,
     /// Replace an NPC's schedule. The next whereabouts lookup follows the new cycle.
-    SetSchedule { person: PersonId, schedule: Schedule },
+    SetSchedule {
+        person: PersonId,
+        schedule: Schedule,
+    },
+    /// Jump the clock forward by `hours`, from [`MIN_WAIT_HOURS`] to
+    /// [`MAX_WAIT_HOURS`]. Zero and anything above the maximum are refused
+    /// and leave the world unchanged. On the road, a road encounter stops
+    /// the wait at that point and the rest of the order is not spent.
+    Wait { hours: u32 },
+    /// Pass [`STEP_HOURS`] on the clock. In turn-based mode this is how time
+    /// moves when no other command spends it.
+    Step,
+    /// Switch the clock between real time and turn-based.
+    SetTimeMode { mode: TimeMode },
 }
 
 /// Something that happened in the world as the result of a command.
@@ -290,6 +335,24 @@ pub enum Event {
     ScheduleChanged {
         person: PersonId,
     },
+    /// The party waited `hours` hours. This is how far the clock moved, which
+    /// is shorter than the order when a road encounter stopped it.
+    Waited {
+        hours: u32,
+        on: Date,
+        hour: u32,
+        minute: u32,
+    },
+    /// An explicit step moved the clock.
+    Stepped {
+        on: Date,
+        hour: u32,
+        minute: u32,
+    },
+    /// The clock changed mode.
+    TimeModeChanged {
+        mode: TimeMode,
+    },
 }
 
 /// Why a command was refused. A refused command changes nothing.
@@ -361,6 +424,8 @@ pub enum CommandError {
     NotInConversation,
     /// No line on offer has this number.
     UnknownLine(usize),
+    /// A wait was not from 1 to 24 hours.
+    BadWait,
 }
 
 /// One party member's fatigue after a night that changed it.
@@ -433,6 +498,7 @@ impl fmt::Display for CommandError {
             }
             CommandError::NotInConversation => write!(f, "the player is not talking to anyone"),
             CommandError::UnknownLine(n) => write!(f, "there is no line {n} to say"),
+            CommandError::BadWait => write!(f, "wait from 1 to 24 hours"),
         }
     }
 }
@@ -457,6 +523,9 @@ impl World {
                     | Command::MakeCamp
                     | Command::Rest
                     | Command::PackUp
+                    | Command::Wait { .. }
+                    | Command::Step
+                    | Command::SetTimeMode { .. }
                     | Command::SetHostility { .. }
                     | Command::SetAttitude { .. }
                     | Command::Equip { .. }
@@ -490,6 +559,9 @@ impl World {
             Command::Say { line } => self.say(line),
             Command::EndConversation => self.end_conversation(),
             Command::SetSchedule { person, schedule } => self.set_schedule(person, schedule),
+            Command::Wait { hours } => self.wait(hours),
+            Command::Step => self.step(),
+            Command::SetTimeMode { mode } => self.set_time_mode(mode),
         }
     }
 
@@ -624,29 +696,29 @@ impl World {
             return Err(CommandError::UnknownPlace(to));
         }
 
-        let (from, leagues, walked, encounter_chance, starting) = if let Some(journey) = self.journey
-        {
-            if journey.to != to {
-                return Err(CommandError::OnTheRoad);
-            }
-            (
-                journey.from,
-                journey.leagues,
-                journey.leagues_walked,
-                journey.encounter_chance,
-                false,
-            )
-        } else {
-            let here = self.party_at;
-            if here == to {
-                return Err(CommandError::AlreadyThere);
-            }
-            // `Road` is `Copy`, so this takes a copy and stops borrowing `self`.
-            let road = *self
-                .road_between(here, to)
-                .ok_or(CommandError::NoRoad { from: here, to })?;
-            (here, road.leagues, 0, road.encounter_chance, true)
-        };
+        let (from, leagues, walked, encounter_chance, starting) =
+            if let Some(journey) = self.journey {
+                if journey.to != to {
+                    return Err(CommandError::OnTheRoad);
+                }
+                (
+                    journey.from,
+                    journey.leagues,
+                    journey.leagues_walked,
+                    journey.encounter_chance,
+                    false,
+                )
+            } else {
+                let here = self.party_at;
+                if here == to {
+                    return Err(CommandError::AlreadyThere);
+                }
+                // `Road` is `Copy`, so this takes a copy and stops borrowing `self`.
+                let road = *self
+                    .road_between(here, to)
+                    .ok_or(CommandError::NoRoad { from: here, to })?;
+                (here, road.leagues, 0, road.encounter_chance, true)
+            };
 
         let left = leagues.saturating_sub(walked);
         // The order stops at the destination. Fatigue is for the hours
@@ -670,47 +742,44 @@ impl World {
             });
             self.party_site = None;
         }
-        if cost > 0 {
-            self.spend_fatigue(cost);
+        // The journey is stored before the clock moves, so the pause hook
+        // can see the road this order is walking.
+        self.journey = Some(Journey {
+            from,
+            to,
+            leagues,
+            leagues_walked: walked,
+            encounter_chance,
+        });
+
+        let moved = self.advance(hours_as_minutes(hours), AdvanceKind::Pass);
+        let walked_hours = moved.minutes / MINUTES_PER_HOUR;
+        // The check above used the full order. A pause may have stopped the
+        // walk early, so only the hours actually walked are paid.
+        let spent = travel_fatigue(walked_hours);
+        if spent > 0 {
+            self.spend_fatigue(spent);
         }
         let fatigue = self.member_fatigue();
+        events.extend(moved.events);
 
-        let mut remaining = hours;
-        while remaining > 0 {
-            let until_midnight = HOURS_PER_DAY - self.hour;
-            let chunk = remaining.min(until_midnight);
-            self.advance_hours(chunk, &mut events);
-            if self.rng.chance(encounter_chance) {
-                events.push(Event::RoadEncounter {
-                    from,
-                    to,
-                    on: self.date,
-                });
-            }
-            remaining -= chunk;
-        }
-
-        let leagues_walked = walked + hours;
+        let leagues_walked = walked + walked_hours;
         let leagues_left = leagues.saturating_sub(leagues_walked);
         events.push(Event::Traveled {
             from,
             to,
-            leagues: hours,
+            leagues: walked_hours,
             leagues_left,
-            hours,
+            hours: walked_hours,
             on: self.date,
             hour: self.hour,
             fatigue,
         });
 
         if leagues_left > 0 {
-            self.journey = Some(Journey {
-                from,
-                to,
-                leagues,
-                leagues_walked,
-                encounter_chance,
-            });
+            if let Some(journey) = self.journey.as_mut() {
+                journey.leagues_walked = leagues_walked;
+            }
             return Ok(events);
         }
 
@@ -778,12 +847,118 @@ impl World {
         Ok(vec![Event::ScheduleChanged { person: id }])
     }
 
-    /// Moves the clock forward. Each time the hour crosses 24, the date rolls
-    /// and a [`Event::DayPassed`] is recorded.
-    fn advance_hours(&mut self, hours: u32, events: &mut Vec<Event>) {
-        let total = u64::from(self.hour) + u64::from(hours);
-        let days = total / u64::from(HOURS_PER_DAY);
-        self.hour = (total % u64::from(HOURS_PER_DAY)) as u32;
+    /// The one place the date, hour, or minute changes.
+    ///
+    /// `minutes` is how far the caller asked the clock to move.
+    /// [`AdvanceKind::Elapsed`] does nothing in turn-based mode, and nothing
+    /// while the clock is paused. [`AdvanceKind::Spend`] and
+    /// [`AdvanceKind::Pass`] always spend time. A pass on the road stops at a
+    /// road encounter and does not spend the rest. [`World::pause_hook`] is
+    /// where a later event stops this same function.
+    pub fn advance(&mut self, minutes: u32, kind: AdvanceKind) -> ClockAdvance {
+        if minutes == 0 || self.elapsed_is_idle(kind) {
+            return ClockAdvance {
+                minutes: 0,
+                events: Vec::new(),
+                stopped: false,
+            };
+        }
+        if matches!(kind, AdvanceKind::Spend | AdvanceKind::Pass) {
+            self.clock_paused = false;
+        }
+
+        let mut left = minutes;
+        let mut moved = 0;
+        let mut events = Vec::new();
+        let mut stopped = false;
+        while left > 0 {
+            let step = self.minutes_before_pause_check(kind, left);
+            self.add_minutes(step, &mut events);
+            moved += step;
+            left -= step;
+            if let Some(event) = self.pause_hook(kind) {
+                events.push(event);
+                self.clock_paused = true;
+                stopped = true;
+                break;
+            }
+        }
+        ClockAdvance {
+            minutes: moved,
+            events,
+            stopped,
+        }
+    }
+
+    /// True when this call is passive time that the mode or the pause ignores.
+    fn elapsed_is_idle(&self, kind: AdvanceKind) -> bool {
+        match kind {
+            AdvanceKind::Elapsed => self.time_mode != TimeMode::RealTime || self.clock_paused,
+            AdvanceKind::Spend | AdvanceKind::Pass => false,
+        }
+    }
+
+    /// How many of the next `within` minutes to move before [`World::pause_hook`].
+    ///
+    /// On a road, travel and wait check at midnight, which is once for each
+    /// calendar day the order spends there. A later event can stop sooner by
+    /// returning a smaller step from here.
+    fn minutes_before_pause_check(&self, kind: AdvanceKind, within: u32) -> u32 {
+        let on_the_road = match kind {
+            AdvanceKind::Pass => self.journey.is_some(),
+            AdvanceKind::Elapsed | AdvanceKind::Spend => false,
+        };
+        if on_the_road {
+            within.min(self.minutes_until_midnight())
+        } else {
+            within
+        }
+    }
+
+    /// An event that needs the player at the current moment, if one is due.
+    ///
+    /// A road encounter during travel or wait is the one event that stops the
+    /// clock today. A later event stops this same function by returning here.
+    fn pause_hook(&mut self, kind: AdvanceKind) -> Option<Event> {
+        if let Some(event) = self.road_encounter_pause(kind) {
+            return Some(event);
+        }
+        None
+    }
+
+    /// Once for each calendar day a travel or wait spends on the road.
+    fn road_encounter_pause(&mut self, kind: AdvanceKind) -> Option<Event> {
+        match kind {
+            AdvanceKind::Pass => {}
+            AdvanceKind::Elapsed | AdvanceKind::Spend => return None,
+        }
+        let journey = self.journey?;
+        if self.rng.chance(journey.encounter_chance) {
+            Some(Event::RoadEncounter {
+                from: journey.from,
+                to: journey.to,
+                on: self.date,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Adds minutes to the clock. Crossing 60 rolls the hour. Crossing 24
+    /// hours rolls the date and records [`Event::DayPassed`]. Callers do not
+    /// bump the date or the hour themselves.
+    fn add_minutes(&mut self, minutes: u32, events: &mut Vec<Event>) {
+        if minutes == 0 {
+            return;
+        }
+        let day = u64::from(HOURS_PER_DAY) * u64::from(MINUTES_PER_HOUR);
+        let total = u64::from(self.hour) * u64::from(MINUTES_PER_HOUR)
+            + u64::from(self.minute)
+            + u64::from(minutes);
+        let days = (total / day) as u32;
+        let rest = total % day;
+        self.hour = (rest / u64::from(MINUTES_PER_HOUR)) as u32;
+        self.minute = (rest % u64::from(MINUTES_PER_HOUR)) as u32;
         for _ in 0..days {
             self.date = self.date.next_day();
             events.push(Event::DayPassed { date: self.date });
@@ -855,7 +1030,8 @@ impl World {
             copper,
         }];
         events.extend(spent);
-        self.advance_hours(INN_HOURS, &mut events);
+        let moved = self.advance(hours_as_minutes(INN_HOURS), AdvanceKind::Spend);
+        events.extend(moved.events);
         Ok(events)
     }
 
@@ -965,7 +1141,8 @@ impl World {
         } else {
             vec![Event::Camped { at, on }]
         };
-        self.advance_hours(MAKE_CAMP_HOURS, &mut events);
+        let moved = self.advance(hours_as_minutes(MAKE_CAMP_HOURS), AdvanceKind::Spend);
+        events.extend(moved.events);
         Ok(events)
     }
 
@@ -997,7 +1174,8 @@ impl World {
         events.extend(food_effects);
         events.extend(water_effects);
         events.extend(wood_effects);
-        self.advance_hours(REST_HOURS, &mut events);
+        let moved = self.advance(hours_as_minutes(REST_HOURS), AdvanceKind::Spend);
+        events.extend(moved.events);
         Ok(events)
     }
 
@@ -1009,8 +1187,45 @@ impl World {
         let at = self.party_at;
         self.camped = false;
         let mut events = vec![Event::PackedUp { at, on }];
-        self.advance_hours(PACK_UP_HOURS, &mut events);
+        let moved = self.advance(hours_as_minutes(PACK_UP_HOURS), AdvanceKind::Spend);
+        events.extend(moved.events);
         Ok(events)
+    }
+
+    /// Jump the clock forward. Refuses 0 and anything above 24 without
+    /// changing the world. On the road, [`World::advance`] stops at a road
+    /// encounter and the remaining hours are not spent.
+    fn wait(&mut self, hours: u32) -> Result<Vec<Event>, CommandError> {
+        if !(MIN_WAIT_HOURS..=MAX_WAIT_HOURS).contains(&hours) {
+            return Err(CommandError::BadWait);
+        }
+        let moved = self.advance(hours_as_minutes(hours), AdvanceKind::Pass);
+        let spent = moved.minutes / MINUTES_PER_HOUR;
+        let mut events = moved.events;
+        events.push(Event::Waited {
+            hours: spent,
+            on: self.date,
+            hour: self.hour,
+            minute: self.minute,
+        });
+        Ok(events)
+    }
+
+    /// Pass one hour. Turn-based time uses this when no other command spends it.
+    fn step(&mut self) -> Result<Vec<Event>, CommandError> {
+        let moved = self.advance(hours_as_minutes(STEP_HOURS), AdvanceKind::Spend);
+        let mut events = moved.events;
+        events.push(Event::Stepped {
+            on: self.date,
+            hour: self.hour,
+            minute: self.minute,
+        });
+        Ok(events)
+    }
+
+    fn set_time_mode(&mut self, mode: TimeMode) -> Result<Vec<Event>, CommandError> {
+        self.time_mode = mode;
+        Ok(vec![Event::TimeModeChanged { mode }])
     }
 
     /// How many of `item_type` the party carries.
@@ -1275,6 +1490,10 @@ impl World {
             on: self.date,
         }])
     }
+}
+
+fn hours_as_minutes(hours: u32) -> u32 {
+    hours.saturating_mul(MINUTES_PER_HOUR)
 }
 
 /// Turns a place name into a key: "Old Mill Ford" becomes "old-mill-ford".
