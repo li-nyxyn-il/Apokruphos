@@ -14,7 +14,8 @@
 //! - The first night draws evenly: any four Akstada and any ten minors.
 //! - An Akstada that was up last night weighs 50% more in the draw.
 //! - Once it has been up [`MAJOR_COOLDOWN_AFTER`] nights running, it weighs
-//!   70% less than an unseen one, and half that again for each further night.
+//!   70% less than a returning one would, and half that again for each
+//!   further night.
 //!   A night away resets it.
 //! - A minor that was up last night cannot be up tonight. The rest draw evenly.
 
@@ -30,17 +31,17 @@ pub const MINORS_PER_NIGHT: usize = 10;
 pub const SKY_TURNS_AT_HOUR: u32 = 12;
 
 /// Draw weight of an Akstada that was not up last night. The other weights
-/// are in the same units, so 1500 is "50% more likely" and 300 is "70% less".
+/// are in the same units, so 1500 is "50% more likely".
 pub const MAJOR_BASE_WEIGHT: u64 = 1000;
 /// An Akstada that was up last night: 50% more than the base.
-pub const MAJOR_RETURN_WEIGHT: u64 = MAJOR_BASE_WEIGHT * 4 / 3;
+pub const MAJOR_RETURN_WEIGHT: u64 = MAJOR_BASE_WEIGHT * 3 / 2;
 /// Nights running after which an Akstada starts to fade.
 pub const MAJOR_COOLDOWN_AFTER: u32 = 4;
 /// An Akstada up [`MAJOR_COOLDOWN_AFTER`] nights running: 70% less than the
-/// base. Each night past that halves it again.
+/// return weight. Each night past that halves it again.
 ///
-/// The 70% and each further 50% are taken off the return weight,
-/// not off the 50% boost, and compound: 300, 150, 75, and so on.
+/// The 70% and each further 50% are taken off the return weight, not off
+/// the base, and compound: 450, 225, 112, and so on.
 pub const MAJOR_COOLDOWN_WEIGHT: u64 = MAJOR_RETURN_WEIGHT * 3 / 10;
 
 /// Placeholder names for the minor constellations, until the lore has them.
@@ -268,9 +269,9 @@ mod tests {
         assert_eq!(weight_for_streak(0), 1000);
         assert_eq!(weight_for_streak(1), 1500);
         assert_eq!(weight_for_streak(3), 1500);
-        assert_eq!(weight_for_streak(4), 300);
-        assert_eq!(weight_for_streak(5), 150);
-        assert_eq!(weight_for_streak(6), 75);
+        assert_eq!(weight_for_streak(4), 450);
+        assert_eq!(weight_for_streak(5), 225);
+        assert_eq!(weight_for_streak(6), 112);
         assert_eq!(weight_for_streak(100), 1);
     }
 

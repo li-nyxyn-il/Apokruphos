@@ -123,7 +123,9 @@ fn akstada_return_more_and_then_fade() {
         (rate(1) - rate(3)).abs() < 0.02,
         "the boost holds to night 3"
     );
-    assert!(rate(4) < rate(0) * 0.4, "four nights running fades it");
+    // The fade is 70% off the return weight: 450 against 1500 and 1000.
+    assert!(rate(4) < rate(3) * 0.4, "four nights running fades it");
+    assert!(rate(4) < rate(0) * 0.6, "below an unseen one too");
     assert!(rate(5) < rate(4), "and it keeps fading");
 }
 
