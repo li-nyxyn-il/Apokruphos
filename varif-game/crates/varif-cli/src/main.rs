@@ -7,8 +7,8 @@ use std::io::{self, BufRead, Write};
 use std::time::Instant;
 use std::{env, fs, process};
 use varif_core::{
-    load_world, AdvanceKind, Command, EquipSlot, Event, Itinerary, MemberFatigue, PersonId, Place,
-    PlaceId, TimeMode, World,
+    game_minutes, load_world, AdvanceKind, Command, EquipSlot, Event, Itinerary, MemberFatigue,
+    PersonId, Place, PlaceId, TimeMode, World, MAX_TIME_SCALE, MIN_TIME_SCALE,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -53,6 +53,9 @@ Commands:
                   clock is not paused; the game never reads the clock itself
   mode turn       ignore elapsed minutes; time moves when a command spends
                   it, or on step
+  scale           show how many game minutes pass per real minute
+  scale <n>       set that, from 1 to 60; 1 matches the wall clock.
+                  Camp, sleep, travel, wait, and step are not sped up
   sleep           sleep eight hours at an inn for 5 copper, or at a
                   residence for free
   write <text>    add a journal entry
@@ -329,6 +332,7 @@ fn main() {
                 run(&mut world, Command::Step);
             }
             "mode" | "time" => set_mode(&mut world, rest),
+            "scale" => set_scale(&mut world, &mut host_clock, rest),
             "sleep" => {
                 run(&mut world, Command::Sleep);
             }
@@ -693,6 +697,7 @@ fn describe(world: &World, event: &Event) -> String {
         Event::Waited { hours, .. } => format!("The party waits {hours} hours."),
         Event::Stepped { .. } => "An hour passes.".to_string(),
         Event::TimeModeChanged { mode } => format!("The clock is now {mode}."),
+        Event::TimeScaleChanged { scale } => format!("The clock runs at {scale}× real time."),
     }
 }
 
@@ -702,9 +707,10 @@ struct HostClock {
     carry_ms: u128,
 }
 
-/// Passes minutes this process has seen since the last call. The core does
-/// not read the operating system clock. In turn-based mode, and while the
-/// clock is paused, the call is still made and the world ignores it.
+/// Passes minutes this process has seen since the last call. The world's
+/// time scale turns those real milliseconds into game minutes first. The
+/// core does not read the operating system clock. In turn-based mode, and
+/// while the clock is paused, the gap is dropped.
 fn pass_elapsed(world: &mut World, clock: &mut HostClock) {
     let elapsed = clock.last.elapsed();
     clock.last = Instant::now();
@@ -712,13 +718,12 @@ fn pass_elapsed(world: &mut World, clock: &mut HostClock) {
         clock.carry_ms = 0;
         return;
     }
-    clock.carry_ms += elapsed.as_millis();
-    let minutes = clock.carry_ms / 60_000;
-    clock.carry_ms %= 60_000;
+    clock.carry_ms = clock.carry_ms.saturating_add(elapsed.as_millis());
+    let (minutes, rest) = game_minutes(clock.carry_ms, world.time_scale);
+    clock.carry_ms = rest;
     if minutes == 0 {
         return;
     }
-    let minutes = u32::try_from(minutes).unwrap_or(u32::MAX);
     let moved = world.advance(minutes, AdvanceKind::Elapsed);
     for event in &moved.events {
         println!("{}", describe(world, event));
@@ -728,7 +733,7 @@ fn pass_elapsed(world: &mut World, clock: &mut HostClock) {
 fn is_clock_command(answer: &str) -> bool {
     matches!(
         answer.split_whitespace().next(),
-        Some("wait" | "step" | "mode" | "time")
+        Some("wait" | "step" | "mode" | "time" | "scale")
     )
 }
 
@@ -757,11 +762,25 @@ fn set_mode(world: &mut World, rest: &str) {
     run(world, Command::SetTimeMode { mode });
 }
 
+fn set_scale(world: &mut World, clock: &mut HostClock, rest: &str) {
+    if rest.is_empty() {
+        println!("{}", clock_line(world));
+        return;
+    }
+    let Ok(scale) = rest.parse::<u32>() else {
+        println!("The time scale is a number from {MIN_TIME_SCALE} to {MAX_TIME_SCALE}.");
+        return;
+    };
+    if run(world, Command::SetTimeScale { scale }) {
+        clock.carry_ms = 0;
+    }
+}
+
 fn clock_line(world: &World) -> String {
     let paused = if world.clock_paused { ", paused" } else { "" };
     format!(
-        "{}, {:02}:{:02} ({}){paused}",
-        world.date, world.hour, world.minute, world.time_mode
+        "{}, {:02}:{:02} ({}, {}×){paused}",
+        world.date, world.hour, world.minute, world.time_mode, world.time_scale
     )
 }
 

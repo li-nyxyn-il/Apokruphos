@@ -1,57 +1,52 @@
 //! The seconds a frame hands to the world clock.
 //!
 //! The core does not read the operating system clock. In real-time mode the
-//! host passes elapsed minutes to [`World::advance`]. Turn-based mode, and a
-//! paused clock, ignore that call. Camp, sleep, travel, pack-up, and wait
-//! keep using the same function with a different [`AdvanceKind`].
+//! host passes elapsed minutes to [`World::advance`]. Those minutes are the
+//! frame's real time multiplied by [`World::time_scale`]. Turn-based mode,
+//! and a paused clock, ignore that call. Camp, sleep, travel, pack-up, and
+//! wait keep using the same function with a different [`AdvanceKind`], and
+//! the scale does not shorten them.
 
 use std::time::Duration;
 
-use varif_core::{AdvanceKind, ClockAdvance, TimeMode, World};
-
-/// Whole minutes of `frame_seconds` to pass on, keeping what is left over.
-///
-/// `running` is false in turn-based mode and while the clock is paused. Those
-/// frames pass nothing and drop the remainder, so that time does not arrive
-/// later when the clock starts.
-pub(crate) fn take_minutes(carry_seconds: &mut f32, frame_seconds: f32, running: bool) -> u32 {
-    if !running {
-        *carry_seconds = 0.0;
-        return 0;
-    }
-    if !frame_seconds.is_finite() || frame_seconds <= 0.0 {
-        return 0;
-    }
-    *carry_seconds += frame_seconds;
-    let minutes = (*carry_seconds / 60.0) as u32;
-    if minutes == 0 {
-        return 0;
-    }
-    *carry_seconds -= minutes as f32 * 60.0;
-    if !carry_seconds.is_finite() || *carry_seconds < 0.0 {
-        *carry_seconds = 0.0;
-    }
-    minutes
-}
+use varif_core::{
+    game_minutes, real_ms_until_next_game_minute, AdvanceKind, ClockAdvance, TimeMode, World,
+};
 
 /// What one frame does with the seconds since the previous frame.
 ///
-/// The returned advance is that call. Zero minutes means the frame did not
-/// move the clock.
+/// `carry_real_ms` is real time not yet a whole game minute. The world's
+/// time scale turns it into game minutes before [`World::advance`]. Zero
+/// minutes means the frame did not move the clock. Turn-based mode and a
+/// paused clock pass nothing and drop the remainder, so that time does not
+/// arrive later when the clock starts.
 pub(crate) fn apply_elapsed_frame(
     world: &mut World,
-    carry_seconds: &mut f32,
+    carry_real_ms: &mut u128,
     frame_seconds: f32,
 ) -> ClockAdvance {
-    let minutes = take_minutes(carry_seconds, frame_seconds, is_running(world));
+    if !is_running(world) {
+        *carry_real_ms = 0;
+        return idle();
+    }
+    if frame_seconds.is_finite() && frame_seconds > 0.0 {
+        let added = (frame_seconds * 1000.0).round() as u128;
+        *carry_real_ms = carry_real_ms.saturating_add(added);
+    }
+    let (minutes, rest) = game_minutes(*carry_real_ms, world.time_scale);
+    *carry_real_ms = rest;
     if minutes == 0 {
-        return ClockAdvance {
-            minutes: 0,
-            events: Vec::new(),
-            stopped: false,
-        };
+        return idle();
     }
     world.advance(minutes, AdvanceKind::Elapsed)
+}
+
+fn idle() -> ClockAdvance {
+    ClockAdvance {
+        minutes: 0,
+        events: Vec::new(),
+        stopped: false,
+    }
 }
 
 /// Real time is running: passive minutes move the clock.
@@ -59,19 +54,16 @@ pub(crate) fn is_running(world: &World) -> bool {
     world.time_mode == TimeMode::RealTime && !world.clock_paused
 }
 
-/// How long to wait before drawing again, so the next minute can show.
+/// How long to wait before drawing again, so the next game minute can show.
 ///
-/// The clock on screen changes by the minute, so the frame waits out the
-/// seconds it has not yet handed over. A late wake still counts. The next
-/// frame passes the seconds that actually passed, not this estimate.
-pub(crate) fn until_next_minute(carry_seconds: f32) -> Duration {
-    let into = if carry_seconds.is_finite() {
-        carry_seconds.clamp(0.0, 59.5)
-    } else {
-        0.0
-    };
-    let left = (60.0 - into).clamp(0.5, 60.0);
-    Duration::try_from_secs_f32(left).unwrap_or(Duration::from_secs(1))
+/// At 1× that is the real seconds still short of a minute. At a higher
+/// scale the wait is shorter, down to about one real second at 60×. A late
+/// wake still counts. The next frame passes the seconds that actually
+/// passed, not this estimate.
+pub(crate) fn until_next_minute(carry_real_ms: u128, scale: u32) -> Duration {
+    let ms = real_ms_until_next_game_minute(carry_real_ms, scale);
+    let secs = (ms as f32 / 1000.0).clamp(0.05, 60.0);
+    Duration::try_from_secs_f32(secs).unwrap_or(Duration::from_secs(1))
 }
 
 #[cfg(test)]
@@ -98,7 +90,7 @@ mod tests {
     #[test]
     fn sixty_one_second_frames_pass_one_minute() {
         let mut world = realtime();
-        let mut carry = 0.0;
+        let mut carry = 0;
         for _ in 0..59 {
             let moved = apply_elapsed_frame(&mut world, &mut carry, 1.0);
             assert_eq!(moved.minutes, 0);
@@ -108,13 +100,30 @@ mod tests {
         let moved = apply_elapsed_frame(&mut world, &mut carry, 1.0);
         assert_eq!(moved.minutes, 1);
         assert_eq!((world.hour, world.minute), (0, 1));
-        assert_eq!(carry, 0.0);
+        assert_eq!(carry, 0);
+    }
+
+    #[test]
+    fn one_real_second_at_sixty_times_is_one_game_minute() {
+        let mut world = realtime();
+        world.apply(Command::SetTimeScale { scale: 60 }).unwrap();
+        let mut carry = 0;
+        let moved = apply_elapsed_frame(&mut world, &mut carry, 1.0);
+        assert_eq!(moved.minutes, 1);
+        assert_eq!((world.hour, world.minute), (0, 1));
+        assert_eq!(carry, 0);
+
+        let mut slower = realtime();
+        let mut carry = 0;
+        let moved = apply_elapsed_frame(&mut slower, &mut carry, 1.0);
+        assert_eq!(moved.minutes, 0);
+        assert_eq!(slower.minute, 0);
     }
 
     #[test]
     fn a_predicted_frame_slice_is_not_yet_a_minute() {
         let mut world = realtime();
-        let mut carry = 0.0;
+        let mut carry = 0;
         // What `stable_dt` is when the previous frame did not ask to repaint.
         let moved = apply_elapsed_frame(&mut world, &mut carry, 1.0 / 60.0);
         assert_eq!(moved.minutes, 0);
@@ -125,11 +134,11 @@ mod tests {
     fn ninety_minutes_of_frame_time_rolls_the_same_clock() {
         let mut world = realtime();
         let start = world.date;
-        let mut carry = 0.0;
+        let mut carry = 0;
         let moved = apply_elapsed_frame(&mut world, &mut carry, 90.0 * 60.0);
         assert_eq!(moved.minutes, 90);
         assert_eq!((world.hour, world.minute), (1, 30));
-        assert_eq!(carry, 0.0);
+        assert_eq!(carry, 0);
         assert_eq!(world.date, start);
     }
 
@@ -137,7 +146,7 @@ mod tests {
     fn a_day_of_frame_time_rolls_the_date_through_advance() {
         let mut world = realtime();
         let start = world.date;
-        let mut carry = 0.0;
+        let mut carry = 0;
         let moved = apply_elapsed_frame(&mut world, &mut carry, 24.0 * 60.0 * 60.0);
         assert_eq!(moved.minutes, 24 * 60);
         assert_eq!(world.date, start.next_day());
@@ -152,13 +161,13 @@ mod tests {
     fn turn_based_frames_pass_no_minutes() {
         let mut world = loaded();
         let before = world.clone();
-        let mut carry = 45.0;
+        let mut carry = 45_000;
         let moved = apply_elapsed_frame(&mut world, &mut carry, 3600.0);
         assert_eq!(moved.minutes, 0);
         assert!(moved.events.is_empty());
         assert!(!moved.stopped);
         assert_eq!(world, before);
-        assert_eq!(carry, 0.0);
+        assert_eq!(carry, 0);
 
         world.apply(Command::Step).unwrap();
         assert_eq!((world.hour, world.minute), (1, 0));
@@ -168,11 +177,11 @@ mod tests {
     fn a_paused_clock_drops_the_gap_instead_of_saving_it() {
         let mut world = realtime();
         world.clock_paused = true;
-        let mut carry = 0.0;
+        let mut carry = 0;
         let moved = apply_elapsed_frame(&mut world, &mut carry, 120.0);
         assert_eq!(moved.minutes, 0);
         assert_eq!((world.hour, world.minute), (0, 0));
-        assert_eq!(carry, 0.0);
+        assert_eq!(carry, 0);
 
         world.clock_paused = false;
         let moved = apply_elapsed_frame(&mut world, &mut carry, 60.0);
@@ -182,12 +191,9 @@ mod tests {
 
     #[test]
     fn the_wake_waits_out_the_seconds_not_yet_a_minute() {
-        assert_eq!(until_next_minute(0.0), Duration::from_secs(60));
-        assert_eq!(until_next_minute(30.0), Duration::from_secs(30));
-        assert_eq!(
-            until_next_minute(59.9),
-            Duration::try_from_secs_f32(0.5).unwrap()
-        );
+        assert_eq!(until_next_minute(0, 1), Duration::from_secs(60));
+        assert_eq!(until_next_minute(30_000, 1), Duration::from_secs(30));
+        assert_eq!(until_next_minute(0, 60), Duration::from_secs(1));
     }
 
     /// Draws one play frame at `time` seconds on egui's clock, with no window.
@@ -232,7 +238,7 @@ mod tests {
         assert_eq!((app.world.hour, app.world.minute), (0, 0));
         let first = delays.lock().expect("delay list").clone();
         assert!(
-            first.contains(&until_next_minute(app.real_seconds)),
+            first.contains(&until_next_minute(app.real_carry_ms, app.world.time_scale)),
             "a real-time frame should ask to draw again, saw {first:?}"
         );
 
@@ -249,7 +255,7 @@ mod tests {
         );
         let second = delays.lock().expect("delay list").clone();
         assert!(
-            second.contains(&until_next_minute(app.real_seconds)),
+            second.contains(&until_next_minute(app.real_carry_ms, app.world.time_scale)),
             "the frame should wake for the leftover seconds, saw {second:?}"
         );
     }
@@ -261,8 +267,40 @@ mod tests {
         show_play(&mut app, &ctx, 0.0);
         show_play(&mut app, &ctx, 90.0);
         assert_eq!((app.world.hour, app.world.minute), (0, 0));
-        assert_eq!(app.real_seconds, 0.0);
+        assert_eq!(app.real_carry_ms, 0);
         assert!(crate::clock_text(&app.world).contains("00:00"));
         assert!(crate::clock_text(&app.world).contains("turn-based"));
+    }
+
+    #[test]
+    fn the_play_frame_runs_faster_when_the_time_scale_is_higher() {
+        let mut app = play_app(TimeMode::RealTime);
+        app.world
+            .apply(Command::SetTimeScale { scale: 60 })
+            .unwrap();
+        let ctx = eframe::egui::Context::default();
+        show_play(&mut app, &ctx, 0.0);
+        show_play(&mut app, &ctx, 2.0);
+        assert_eq!(app.world.hour, 0);
+        assert!(
+            (1..=2).contains(&app.world.minute),
+            "two real seconds at 60× should be one or two game minutes, saw {}",
+            app.world.minute
+        );
+        assert!(crate::clock_text(&app.world).contains("60×"));
+    }
+
+    #[test]
+    fn changing_the_time_scale_drops_the_leftover_real_time() {
+        let mut app = play_app(TimeMode::RealTime);
+        app.real_carry_ms = 30_000;
+        assert!(app.send(Command::SetTimeScale { scale: 10 }));
+        assert_eq!(app.world.time_scale, 10);
+        assert_eq!(app.real_carry_ms, 0);
+
+        app.real_carry_ms = 30_000;
+        assert!(!app.send(Command::SetTimeScale { scale: 0 }));
+        assert_eq!(app.world.time_scale, 10);
+        assert_eq!(app.real_carry_ms, 30_000);
     }
 }

@@ -1,7 +1,8 @@
 //! The world clock, and what an hour of camp, rest, packing, or travel costs.
 
 use varif_core::{
-    load_world, AdvanceKind, Command, CommandError, Event, ItemType, TimeMode, World,
+    game_minutes, load_world, real_ms_until_next_game_minute, AdvanceKind, Command, CommandError,
+    Event, ItemType, TimeMode, World,
 };
 
 const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
@@ -293,6 +294,81 @@ fn wait_rejects_zero_and_twenty_five() {
         Err(CommandError::BadWait)
     );
     assert_eq!(world, before, "a refused wait changes nothing");
+}
+
+#[test]
+fn the_time_scale_defaults_to_one_and_saves() {
+    let mut world = first_leg();
+    assert_eq!(world.time_scale, 1);
+
+    let events = world.apply(Command::SetTimeScale { scale: 10 }).unwrap();
+    assert_eq!(events, vec![Event::TimeScaleChanged { scale: 10 }]);
+    assert_eq!(world.time_scale, 10);
+
+    let saved = world.to_ron().unwrap();
+    assert!(saved.contains("time_scale: 10"));
+    let loaded = World::from_ron(&saved).unwrap();
+    assert_eq!(loaded.time_scale, 10);
+
+    let old = saved.replacen("time_scale: 10,", "", 1);
+    let from_before = World::from_ron(&old).unwrap();
+    assert_eq!(from_before.time_scale, 1);
+
+    let again = world.apply(Command::SetTimeScale { scale: 10 }).unwrap();
+    assert!(again.is_empty());
+}
+
+#[test]
+fn a_time_scale_outside_one_to_sixty_changes_nothing() {
+    let mut world = first_leg();
+    let before = world.clone();
+    assert_eq!(
+        world.apply(Command::SetTimeScale { scale: 0 }),
+        Err(CommandError::BadTimeScale)
+    );
+    assert_eq!(world, before);
+    assert_eq!(
+        world.apply(Command::SetTimeScale { scale: 61 }),
+        Err(CommandError::BadTimeScale)
+    );
+    assert_eq!(world, before);
+}
+
+#[test]
+fn camp_and_step_ignore_the_time_scale() {
+    let mut world = first_leg();
+    world.apply(Command::SetTimeScale { scale: 60 }).unwrap();
+    let atzhaim = world.find_place("atzhaim").unwrap();
+    world
+        .apply(Command::Travel {
+            to: atzhaim,
+            hours: 1,
+        })
+        .unwrap();
+    assert!(world.journey.is_some());
+    world.apply(Command::SetTimeScale { scale: 4 }).unwrap();
+    assert_eq!(world.time_scale, 4);
+
+    let mut camped = first_leg();
+    camped.apply(Command::SetTimeScale { scale: 60 }).unwrap();
+    camped.apply(Command::MakeCamp).unwrap();
+    assert!(camped.camped);
+    assert_eq!((camped.hour, camped.minute), (1, 0));
+    camped.apply(Command::Step).unwrap();
+    assert_eq!((camped.hour, camped.minute), (2, 0));
+}
+
+#[test]
+fn game_minutes_follow_the_scale_and_keep_the_remainder() {
+    assert_eq!(game_minutes(60_000, 1), (1, 0));
+    assert_eq!(game_minutes(1_000, 60), (1, 0));
+    assert_eq!(game_minutes(999, 60), (0, 999));
+    assert_eq!(game_minutes(30_000, 1), (0, 30_000));
+    assert_eq!(game_minutes(45_000, 2), (1, 15_000));
+    assert_eq!(game_minutes(1_000, 0), (0, 1_000));
+    assert_eq!(real_ms_until_next_game_minute(0, 1), 60_000);
+    assert_eq!(real_ms_until_next_game_minute(30_000, 1), 30_000);
+    assert_eq!(real_ms_until_next_game_minute(0, 60), 1_000);
 }
 
 #[test]
