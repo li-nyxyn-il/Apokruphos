@@ -9,6 +9,7 @@ use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::Standing;
 use crate::schedule::Schedule;
+use crate::sky::SKY_TURNS_AT_HOUR;
 use crate::world::{JournalEntry, Journey, Place, PlaceKind, Road, SiteKind, TimeMode, World};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -945,16 +946,19 @@ impl World {
     }
 
     /// Adds minutes to the clock. Crossing 60 rolls the hour. Crossing 24
-    /// hours rolls the date and records [`Event::DayPassed`]. Callers do not
-    /// bump the date or the hour themselves.
+    /// hours rolls the date and records [`Event::DayPassed`]. Reaching noon
+    /// turns the sky to the coming night. Callers do not bump the date or the
+    /// hour themselves.
     fn add_minutes(&mut self, minutes: u32, events: &mut Vec<Event>) {
         if minutes == 0 {
             return;
         }
         let day = u64::from(HOURS_PER_DAY) * u64::from(MINUTES_PER_HOUR);
-        let total = u64::from(self.hour) * u64::from(MINUTES_PER_HOUR)
-            + u64::from(self.minute)
-            + u64::from(minutes);
+        let now = u64::from(self.hour) * u64::from(MINUTES_PER_HOUR) + u64::from(self.minute);
+        let total = now + u64::from(minutes);
+        for _ in 0..noons_crossed(now, total) {
+            self.sky.turn();
+        }
         let days = (total / day) as u32;
         let rest = total % day;
         self.hour = (rest / u64::from(MINUTES_PER_HOUR)) as u32;
@@ -1490,6 +1494,17 @@ impl World {
             on: self.date,
         }])
     }
+}
+
+/// How many times the clock reaches noon going from minute `from` to minute
+/// `to` of the same day, counting `to` itself but not `from`. `to` may run
+/// past the end of the day.
+fn noons_crossed(from: u64, to: u64) -> u64 {
+    let day = u64::from(HOURS_PER_DAY) * u64::from(MINUTES_PER_HOUR);
+    let noon = u64::from(SKY_TURNS_AT_HOUR) * u64::from(MINUTES_PER_HOUR);
+    // Count noons up to a minute, shifted so the count never goes negative.
+    let up_to = |m: u64| (m + day - noon) / day;
+    up_to(to) - up_to(from)
 }
 
 fn hours_as_minutes(hours: u32) -> u32 {
