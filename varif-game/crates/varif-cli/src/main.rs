@@ -53,8 +53,8 @@ Commands:
                   clock is not paused; the game never reads the clock itself
   mode turn       ignore elapsed minutes; time moves when a command spends
                   it, or on step
-  sleep           sleep a day at an inn for 5 copper, or at a residence
-                  for free
+  sleep           sleep eight hours at an inn for 5 copper, or at a
+                  residence for free
   write <text>    add a journal entry
   journal         read the journal
   sky             name tonight's constellations; the sky turns at noon
@@ -594,7 +594,7 @@ fn describe(world: &World, event: &Event) -> String {
                 String::new()
             };
             format!(
-                "The party sleeps at the {} in {}.{}{}",
+                "The party sleeps eight hours at the {} in {}.{}{}",
                 site_name(world.place(*at), *site),
                 world.place_name(*at),
                 paid,

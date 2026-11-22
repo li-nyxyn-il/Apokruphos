@@ -1353,7 +1353,7 @@ fn party_panel(
         if ui.button("Pack up (1 hour)").clicked() {
             *action = Some(Action::Send(Command::PackUp));
         }
-        if at_a_bed(world) && ui.button("Sleep a day").clicked() {
+        if at_a_bed(world) && ui.button("Sleep here (8 hours)").clicked() {
             *action = Some(Action::Send(Command::Sleep));
         }
         if world.camped {
@@ -1640,7 +1640,7 @@ fn describe(world: &World, event: &Event) -> String {
                 String::new()
             };
             format!(
-                "The party sleeps at the {} in {}.{}{}",
+                "The party sleeps eight hours at the {} in {}.{}{}",
                 site_name(world.place(*at), *site),
                 world.place_name(*at),
                 paid,

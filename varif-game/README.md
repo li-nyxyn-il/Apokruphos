@@ -72,7 +72,7 @@ Inside `varif-core/src`:
 
 These are marked `ASSUMPTION` in the code and data:
 
-- **Travel speed:** one league an hour. An order of eight hours or fewer adds no fatigue. Each hour past that costs the next number, summed once for the order: 1 extra costs 1, 2 extra cost 3, 3 extra cost 6, so `n` extra hours cost `n * (n + 1) / 2`. Pitching camp takes an hour, sleeping in camp takes eight, packing up takes an hour, and a wait is from 1 to 24 hours. Camp, rest, pack, travel, and wait all call `World::advance` and do not bump the date or the hour themselves. A wait or a travel that would pass a road encounter stops there. An NPC's whereabouts are a repeating cycle of spans on that person, looked up from the absolute hour, and a lookup does not tick every NPC.
+- **Travel speed:** one league an hour. An order of eight hours or fewer adds no fatigue. Each hour past that costs the next number, summed once for the order: 1 extra costs 1, 2 extra cost 3, 3 extra cost 6, so `n` extra hours cost `n * (n + 1) / 2`. Pitching camp takes an hour, sleeping in camp takes eight, a night at an inn or a residence takes eight, packing up takes an hour, and a wait is from 1 to 24 hours. Camp, rest, sleep, pack, travel, and wait all call `World::advance` and do not bump the date or the hour themselves. A wait or a travel that would pass a road encounter stops there. An NPC's whereabouts are a repeating cycle of spans on that person, looked up from the absolute hour, and a lookup does not tick every NPC.
 - **Distances and encounter chances:** every road in `data/first_leg.ron`.
 - **Start date:** 1 Jhuze 192 zdy.
 - **The cast:** one stand-in person, "The Pylgrym".

@@ -20,8 +20,9 @@ pub const MAKE_CAMP_HOURS: u32 = 1;
 pub const REST_HOURS: u32 = 8;
 /// Packing the camp up takes an hour.
 pub const PACK_UP_HOURS: u32 = 1;
-/// A night at an inn or a residence takes a full day on the clock.
-const INN_HOURS: u32 = HOURS_PER_DAY;
+/// A night at an inn or a residence takes eight hours, the same length as
+/// sleeping in camp. The date rolls only when those hours cross midnight.
+const INN_HOURS: u32 = REST_HOURS;
 /// Hours of one travel order that add no fatigue. Each hour past this costs
 /// the next whole number, summed once for the order.
 pub const UNTIRED_HOURS: u32 = 8;
@@ -104,9 +105,10 @@ pub enum Command {
     /// the item, so its consumed effects fire. A missing supply is a
     /// penalty, not a refusal. The camp stays pitched.
     Rest,
-    /// Sleep one night where the party stands, when that is an inn or a
+    /// Sleep eight hours where the party stands, when that is an inn or a
     /// residence. An inn costs [`INN_COPPER`] copper. A residence does not,
-    /// unless the site is marked as an inn.
+    /// unless the site is marked as an inn. The date rolls only when those
+    /// hours cross midnight.
     Sleep,
     /// Take down the pitched camp. Takes [`PACK_UP_HOURS`]. The party cannot
     /// travel until it does.
@@ -241,7 +243,7 @@ pub enum Event {
         at: PlaceId,
         on: Date,
     },
-    /// The party slept one night at an inn or a residence.
+    /// The party slept eight hours at an inn or a residence.
     Slept {
         at: PlaceId,
         site: SiteId,

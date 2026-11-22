@@ -57,7 +57,10 @@ fn on_the_canyon(world: &mut World) {
             hours: 8,
         })
         .unwrap();
-    assert!(world.journey.is_some(), "eight hours does not cross the canyon");
+    assert!(
+        world.journey.is_some(),
+        "eight hours does not cross the canyon"
+    );
 }
 
 fn levels(pylgrym: u32, donold: u32) -> Vec<MemberFatigue> {
@@ -143,18 +146,25 @@ fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
         Some(Event::Slept { fatigue, copper: 5, .. }) if fatigue == &levels(50, 55)
     ));
     assert_eq!(copper(&world), 5);
-    assert!(matches!(events.last(), Some(Event::DayPassed { .. })));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Event::DayPassed { .. })),
+        "eight hours from midnight do not roll the date"
+    );
     assert_eq!(fatigue(&world, "pylgrym"), (50, false));
     assert_eq!(fatigue(&world, "donold"), (55, false));
     assert!(!world.camped);
-    assert_eq!(world.date, start.next_day());
-    assert_eq!(world.hour, 0);
+    assert_eq!(world.date, start);
+    assert_eq!((world.hour, world.minute), (8, 0));
 
     // The second night adds 15: 50 becomes 65, 55 becomes 70. It spends the rest.
     world.apply(Command::Sleep).unwrap();
     assert_eq!(fatigue(&world, "pylgrym"), (65, false));
     assert_eq!(fatigue(&world, "donold"), (70, false));
     assert_eq!(copper(&world), 0);
+    assert_eq!(world.date, start);
+    assert_eq!((world.hour, world.minute), (16, 0));
 
     // No copper: the night is refused and the world stays as it was.
     let before = world.clone();
@@ -190,7 +200,8 @@ fn a_residence_sleeps_by_the_same_rule() {
     world.apply(Command::Sleep).unwrap();
     assert_eq!(fatigue(&world, "pylgrym"), (50, false));
     assert_eq!(fatigue(&world, "donold"), (55, false));
-    assert_eq!(world.date, start.next_day());
+    assert_eq!(world.date, start);
+    assert_eq!((world.hour, world.minute), (8, 0));
     assert_eq!(copper(&world), 10, "a residence does not cost copper");
 }
 
