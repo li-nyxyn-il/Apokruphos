@@ -7,6 +7,7 @@ use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::{DialogueLine, Standing};
 use crate::rng::Rng;
 use crate::schedule::{Schedule, Whereabouts};
+use crate::sky::Sky;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -349,6 +350,10 @@ pub struct World {
     /// for something to be said or for the conversation to end.
     #[serde(default)]
     pub conversation: Option<PersonId>,
+    /// Tonight's constellations. Drawn from the game's seed when the world is
+    /// made, and turned to the next night each noon by [`World::advance`].
+    #[serde(default)]
+    pub sky: Sky,
 }
 
 impl World {
@@ -605,6 +610,11 @@ impl World {
     pub fn from_ron(text: &str) -> Result<World, String> {
         let mut world: World = ron::from_str(text).map_err(|e| e.to_string())?;
         world.settle_clock();
+        if world.sky.is_empty() {
+            // A save from before the sky existed has no seed left to read, so
+            // the sky is seeded from where the world's stream stands.
+            world.sky = Sky::new(world.rng.clone().next_u64());
+        }
         world.grant_follower_factions();
         Ok(world)
     }

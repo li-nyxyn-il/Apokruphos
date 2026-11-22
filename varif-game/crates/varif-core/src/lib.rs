@@ -17,6 +17,7 @@ pub mod ids;
 pub mod npc;
 pub mod rng;
 pub mod schedule;
+pub mod sky;
 pub mod world;
 
 pub use calendar::{Date, DAYS_PER_WEEK, HOURS_PER_DAY, MINUTES_PER_HOUR};
@@ -36,6 +37,9 @@ pub use ids::{PersonId, PlaceId, SiteId};
 pub use npc::{friendliness, Band, Bucket, DialogueLine, Standing, MIN_FRIENDLINESS_TO_TALK};
 pub use rng::Rng;
 pub use schedule::{RoadLeg, Schedule, Span, Whereabouts};
+pub use sky::{
+    Minor, Sky, MAJORS_PER_NIGHT, MINORS_PER_NIGHT, MINOR_CONSTELLATIONS, SKY_TURNS_AT_HOUR,
+};
 pub use world::{
     Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site,
     SiteKind, Temple, TimeMode, World,

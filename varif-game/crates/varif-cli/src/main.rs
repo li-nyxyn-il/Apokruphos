@@ -57,6 +57,7 @@ Commands:
                   for free
   write <text>    add a journal entry
   journal         read the journal
+  sky             name tonight's constellations; the sky turns at noon
   equip <item> in <slot>
                   wear an item from the pack. Slots: shoes, legs, body,
                   arms, gloves, head, back, main hand, off hand, robes, neck
@@ -310,6 +311,7 @@ fn main() {
             "interact" | "talk" => interact(&mut world, rest),
             "sheet" => sheet(&world),
             "journal" => journal(&world),
+            "sky" => sky(&world),
             "map" => map(&world),
             "walk" => walk(&mut world, rest),
             "addplace" => add_place(&mut world, rest),
@@ -919,6 +921,13 @@ fn look(world: &World) {
             road.leagues
         );
     }
+}
+
+fn sky(world: &World) {
+    let majors: Vec<&str> = world.sky.majors().iter().map(|a| a.name()).collect();
+    let minors: Vec<&str> = world.sky.minors().iter().map(|m| m.name()).collect();
+    println!("Tonight the Akstada are {}.", majors.join(", "));
+    println!("Among the lesser stars: {}.", minors.join(", "));
 }
 
 fn journal(world: &World) {

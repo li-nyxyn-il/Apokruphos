@@ -57,6 +57,7 @@ Inside `varif-core/src`:
 | `character.rs` | The shared sheet: role, factions, attitude, blood, heritage, akstada, tongues, vitals, inventory |
 | `faction.rs` | Ecumenci, Bandit, the Audsen Line and Player, with hostility and who the player can join |
 | `rng.rs` | The seeded random number generator |
+| `sky.rs` | The night sky: four Akstada and ten minor constellations a night, turned at noon |
 | `ids.rs` | `PlaceId` and `PersonId` |
 
 ## How it works
