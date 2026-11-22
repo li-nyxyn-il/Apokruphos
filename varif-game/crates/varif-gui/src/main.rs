@@ -14,10 +14,14 @@
 //! The window opens on a choice: start a new game, or load a save. A new game
 //! asks for a character before the map is shown.
 //!
-//! egui redraws the whole window many times a second. Each redraw reads the
-//! `World` and draws it; a click produces an `Action`, which is carried out
-//! once drawing is done. The window keeps no copy of the world's state.
+//! egui redraws the window when something changes, and again when asked.
+//! Each redraw reads the `World` and draws it; a click produces an `Action`,
+//! which is carried out once drawing is done. The window keeps no copy of
+//! the world's state. In real-time mode the play screen asks to be drawn
+//! again when the next minute is due, and passes the seconds since the last
+//! frame into the one world clock.
 
+mod clock;
 mod layout;
 mod storage;
 
@@ -26,10 +30,9 @@ use layout::MapLayout;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs, path::Path, process};
 use varif_core::{
-    load_world, AdvanceKind, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage,
-    Itinerary, MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind,
-    TimeMode, Tongue, World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE,
-    MIN_AGE,
+    load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
+    MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
+    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -731,6 +734,13 @@ impl eframe::App for App {
             Stage::Create => self.create_screen(ui),
             Stage::Play => self.play_screen(ui),
         }
+        // After the click that turns real time on, so that frame schedules
+        // the next one. An immediate repaint would make `stable_dt` usable;
+        // this wait does not, which is why the tick reads `unstable_dt`.
+        if matches!(self.stage, Stage::Play) && clock::is_running(&self.world) {
+            ui.ctx()
+                .request_repaint_after(clock::until_next_minute(self.real_seconds));
+        }
     }
 }
 
@@ -957,19 +967,20 @@ impl App {
     /// Hands this frame's elapsed minutes to the world clock. The core does
     /// not read the operating system clock. Turn-based mode, and a paused
     /// clock, ignore the minutes.
+    ///
+    /// `stable_dt` is not the elapsed time. Unless the previous frame asked
+    /// for an immediate repaint, egui replaces it with the predicted slice,
+    /// about 1/60 of a second, and drops the real gap. This window waits
+    /// until the next minute, so the clock reads `unstable_dt`: the seconds
+    /// since the previous frame.
     fn tick_real_time(&mut self, ui: &egui::Ui) {
-        let dt = ui.input(|input| input.stable_dt);
-        if self.world.time_mode != TimeMode::RealTime || self.world.clock_paused {
-            self.real_seconds = 0.0;
+        // A discarded layout pass repeats this frame. Count its time once.
+        if ui.ctx().current_pass_index() != 0 {
             return;
         }
-        self.real_seconds += dt;
-        let minutes = (self.real_seconds / 60.0) as u32;
-        if minutes == 0 {
-            return;
-        }
-        self.real_seconds -= minutes as f32 * 60.0;
-        let moved = self.world.advance(minutes, AdvanceKind::Elapsed);
+        let frame_seconds = ui.input(|input| input.unstable_dt);
+        let moved =
+            clock::apply_elapsed_frame(&mut self.world, &mut self.real_seconds, frame_seconds);
         for event in &moved.events {
             self.log.push(describe(&self.world, event));
         }
