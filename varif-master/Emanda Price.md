@@ -1,7 +1,10 @@
 ---
-title: "Emanda Price"
-aliases: []
-tags: [character, price]
+title: Emanda Price
+aliases:
+  - Emanda
+tags:
+  - character
+  - price
 ---
 
 # Emanda Price

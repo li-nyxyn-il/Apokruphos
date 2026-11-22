@@ -1,0 +1,93 @@
+# Varif locked palette v2.1 — 91 colours — 2026-11-21
+# One entry per line: HEX  NAME  [M|A]  MODE  RAMP
+#07080E  Void Ink  M  core  Night black / void
+#0D0A0B  Warm Black  M  core  Night black / void
+#171718  Lace Black  M  core  Night black / void
+#1D1C1D  Charcoal  M  core  Night black / void
+#3F2517  Bronze Dark  M  core  Gold / bronze
+#644329  Antique Bronze  M  core  Gold / bronze
+#BA9974  Ornament Gold  M  core  Gold / bronze
+#D6AA5C  Star Gold  M  core  Gold / bronze
+#EFD7A5  Highlight Gold  M  core  Gold / bronze
+#291108  Hearth Dark  M  core  Torchlight
+#803518  Flame Mid  M  core  Torchlight
+#BE8B54  Lamp Gold  M  core  Torchlight
+#2E2117  Canyon Shade  M  core  Warm stone / sand
+#665741  Sandstone  M  core  Warm stone / sand
+#927955  Sun Stone  M  core  Warm stone / sand
+#1D2729  Cliff Teal  M  core  Cut stone
+#404C53  Cold Ashlar  M  core  Cut stone
+#5D3822  Skin Shade  M  core  Red-blood skin
+#96704E  Skin Mid  M  core  Red-blood skin
+#C9A982  Skin Light  M  core  Red-blood skin
+#E5CEB9  Skin Highlight  M  core  Red-blood skin
+#3A5560  Blue Shade  A  core  Blue-blood sky
+#5B8FA8  Blue Mid  A  core  Blue-blood sky
+#8FB4D1  Blue Skin  M  core  Blue-blood sky
+#C5E3F0  Blue Crystal  A  core  Blue-blood sky
+#163056  Deep Blue Blood  A  core  Blue blood (wound)
+#2E383E  Silver Shade  M  core  Black-blood silver
+#46565E  Silver Mid  M  core  Black-blood silver
+#A7A391  Warm Silver  M  core  Black-blood silver
+#D0D8D3  Silver Highlight  M  core  Black-blood silver
+#381B12  Cloak Shade  M  core  Cloth reds
+#A13E18  Cloak Mid  M  core  Cloth reds
+#CC1D19  Cloak Bright  M  core  Cloth reds
+#9B9B93  Hair Mid  M  core  White / linen / hair
+#BDCECC  Pale Silver  M  core  White / linen / hair
+#EBEADC  Ivory  M  core  White / linen / hair
+#B29866  Iris Amber  M  core  Eyes and accents
+#C9C4B8  Cloudy Pupil  A  core  Eyes and accents
+#1E0C16  Price Plum Shade  M  core  Price Line purples, blues, whites
+#351422  Price Plum  M  core  Price Line purples, blues, whites
+#4D1D2C  Price Plum Lit  M  core  Price Line purples, blues, whites
+#FEFEFD  Pearl White  M  core  Niaviopti white gold, pearl, glow
+#1C0101  Ember Void  M  night  Blood red sky
+#3A0504  Dried Blood  M  night  Blood red sky
+#680A0A  Crimson Dusk  M  night  Blood red sky
+#A61313  Signal Red  M  night  Blood red sky
+#E81F1F  Star Red  M  night  Blood red sky
+#456EC0  Zenith Blue  M  day  Day sky blue
+#5A82C2  Sky Mid  M  day  Day sky blue
+#80A4DE  Sky Light  M  day  Day sky blue
+#BDCDE4  Sky Pale  M  day  Day sky blue
+#3D3B44  Near Mass  M  day  Atmospheric haze / distance
+#555862  Mid Ridge  M  day  Atmospheric haze / distance
+#61829D  Distance Blue  M  day  Atmospheric haze / distance
+#85B5CE  Horizon Veil  M  day  Atmospheric haze / distance
+#10271B  Forest Shade  M  day  Conifer greens
+#2A2E1B  Needle Dark  M  day  Conifer greens
+#404629  Needle Mid  M  day  Conifer greens
+#545B35  Needle Lit  M  day  Conifer greens
+#3A3F31  Grass Shade  M  day  Meadow and grass
+#56593B  Grass Mid  M  day  Meadow and grass
+#B9B05E  Grass Lit  M  day  Meadow and grass
+#D7CB75  Grass Sun  M  day  Meadow and grass
+#513F29  Straw Shade  M  day  Dry grass / straw
+#8C6F45  Straw Mid  M  day  Dry grass / straw
+#BD9B68  Straw Lit  M  day  Dry grass / straw
+#EDD09E  Straw Sun  M  day  Dry grass / straw
+#563B1D  Sunset Shade  M  day  Autumn / sunset oranges
+#BB6222  Sunset Mid  M  day  Autumn / sunset oranges
+#E58334  Sunset Orange  M  day  Autumn / sunset oranges
+#E5C695  Sunset Gold  M  day  Autumn / sunset oranges
+#3F3C2F  Granite Shade  M  day  Granite greys
+#55534A  Granite Mid  M  day  Granite greys
+#928773  Granite Lit  M  day  Granite greys
+#BFA991  Lime Lit  M  day  Limestone / sandstone (extension)
+#E6D2B6  Lime Pale  M  day  Limestone / sandstone (extension)
+#B8BCC5  Snow Mid  M  day  Snow
+#C9D0DE  Snow Lit  M  day  Snow
+#44433A  Water Deep  M  day  Water
+#6D7A65  River Teal  M  day  Water
+#AEBACB  Lake  M  day  Water
+#805D4C  Fireweed Mid  M  day  Fireweed / flower accents
+#B68D79  Fireweed  M  day  Fireweed / flower accents
+#7C6954  Yhlgori Sandstone  M  day  Old Yhlgori sandstone
+#AA885C  Spire Gold  M  day  Old Yhlgori spire gold
+#1E465C  Hylvanne Lake  M  day  Maphyk Hylvanne lakes
+#C59B44  Ptormyk Grass Sun  M  day  Ptormyk grass
+#4B4D70  Violet Rock  M  day  Ptormyk violet rock
+#736F8A  Violet Rock Lit  M  day  Ptormyk violet rock
+#17346E  Ptormyk Lake Deep  M  day  Ptormyk lake
+#4779B4  Ptormyk Lake  M  day  Ptormyk lake
