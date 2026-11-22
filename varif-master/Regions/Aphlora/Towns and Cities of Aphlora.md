@@ -5,3 +5,5 @@
 [[Penhyla]]
 [[Ebynshor]]
 [[Donnan]]
+
+Jurisdictions (Pynumbra, province, county): [[Umbara]]
