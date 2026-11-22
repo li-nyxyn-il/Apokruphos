@@ -1,6 +1,8 @@
 //! The world clock, and what an hour of camp, rest, packing, or travel costs.
 
-use varif_core::{load_world, Command, CommandError, Event, ItemType, World};
+use varif_core::{
+    load_world, AdvanceKind, Command, CommandError, Event, ItemType, TimeMode, World,
+};
 
 const FIRST_LEG: &str = include_str!("../../../data/first_leg.ron");
 
@@ -46,6 +48,14 @@ fn the_clock_rolls_the_date_at_midnight() {
     assert_eq!(world.hour, 0);
     world.hour = 22;
     let atzhaim = world.find_place("atzhaim").unwrap();
+    // This order is about the date, so the road does not roll an encounter.
+    // A wait that would pass one stops early in its own test.
+    let here = world.party_at;
+    for road in &mut world.roads {
+        if road.joins(here, atzhaim) {
+            road.encounter_chance = 0;
+        }
+    }
 
     let events = world
         .apply(Command::Travel {
@@ -144,12 +154,7 @@ fn extra_hours_cost_the_triangular_sum_once() {
     let atzhaim_hours = |hours: u32| {
         let mut world = first_leg();
         let atzhaim = world.find_place("atzhaim").unwrap();
-        let events = world
-            .apply(Command::Travel {
-                to: atzhaim,
-                hours,
-            })
-            .unwrap();
+        let events = world.apply(Command::Travel { to: atzhaim, hours }).unwrap();
         let traveled = events.iter().find_map(|event| match event {
             Event::Traveled {
                 leagues,
@@ -230,4 +235,154 @@ fn a_travel_order_that_would_pass_zero_fatigue_is_refused() {
     assert_eq!(fatigue(&world, "pylgrym"), (0, false));
     assert_eq!(fatigue(&world, "donold"), (0, false));
     assert_eq!(world.journey.unwrap().leagues_walked, 8);
+}
+
+#[test]
+fn camp_rest_pack_travel_and_wait_move_the_same_clock() {
+    let mut world = first_leg();
+    let start = world.absolute_hour();
+    world
+        .apply(Command::SetTimeMode {
+            mode: TimeMode::RealTime,
+        })
+        .unwrap();
+    let moved = world.advance(30, AdvanceKind::Elapsed);
+    assert_eq!(moved.minutes, 30);
+    assert_eq!((world.hour, world.minute), (0, 30));
+
+    let food = holding(&world, "pylgrym", ItemType::Food);
+    world.apply(Command::MakeCamp).unwrap();
+    assert_eq!((world.hour, world.minute), (1, 30));
+    assert!(world.camped);
+
+    world.apply(Command::Rest).unwrap();
+    assert_eq!((world.hour, world.minute), (9, 30));
+    assert_eq!(holding(&world, "pylgrym", ItemType::Food), food - 1);
+
+    world.apply(Command::PackUp).unwrap();
+    assert!(!world.camped);
+    assert_eq!((world.hour, world.minute), (10, 30));
+
+    let atzhaim = world.find_place("atzhaim").unwrap();
+    world
+        .apply(Command::Travel {
+            to: atzhaim,
+            hours: 1,
+        })
+        .unwrap();
+    assert_eq!(world.journey.unwrap().leagues_walked, 1);
+    assert_eq!((world.hour, world.minute), (11, 30));
+
+    world.apply(Command::Wait { hours: 1 }).unwrap();
+    assert_eq!(world.journey.unwrap().leagues_walked, 1);
+    assert_eq!((world.hour, world.minute), (12, 30));
+    assert_eq!(world.absolute_hour(), start + 12);
+}
+
+#[test]
+fn wait_rejects_zero_and_twenty_five() {
+    let mut world = first_leg();
+    let before = world.clone();
+    assert_eq!(
+        world.apply(Command::Wait { hours: 0 }),
+        Err(CommandError::BadWait)
+    );
+    assert_eq!(world, before, "a refused wait changes nothing");
+    assert_eq!(
+        world.apply(Command::Wait { hours: 25 }),
+        Err(CommandError::BadWait)
+    );
+    assert_eq!(world, before, "a refused wait changes nothing");
+}
+
+#[test]
+fn ninety_minutes_of_real_time_rolls_the_hour() {
+    let mut world = first_leg();
+    let start = world.absolute_hour();
+    world
+        .apply(Command::SetTimeMode {
+            mode: TimeMode::RealTime,
+        })
+        .unwrap();
+
+    let moved = world.advance(90, AdvanceKind::Elapsed);
+    assert_eq!(moved.minutes, 90);
+    assert_eq!(world.hour, 1);
+    assert_eq!(world.minute, 30);
+    assert_eq!(world.absolute_hour(), start + 1);
+
+    let loaded = World::from_ron(&world.to_ron().unwrap()).unwrap();
+    assert_eq!(loaded, world);
+}
+
+#[test]
+fn turn_based_mode_ignores_a_passive_elapsed_call() {
+    let mut world = first_leg();
+    assert_eq!(world.time_mode, TimeMode::TurnBased);
+    let before = world.clone();
+
+    let moved = world.advance(90, AdvanceKind::Elapsed);
+    assert_eq!(moved.minutes, 0);
+    assert!(moved.events.is_empty());
+    assert_eq!(world, before);
+
+    world.apply(Command::Step).unwrap();
+    assert_eq!((world.hour, world.minute), (1, 0));
+    assert_eq!(world.date, before.date);
+}
+
+#[test]
+fn a_wait_stops_early_at_a_road_encounter() {
+    let mut world = first_leg();
+    let atzhaim = world.find_place("atzhaim").unwrap();
+    let here = world.party_at;
+    for road in &mut world.roads {
+        if road.joins(here, atzhaim) {
+            road.encounter_chance = 0;
+        }
+    }
+    world
+        .apply(Command::Travel {
+            to: atzhaim,
+            hours: 1,
+        })
+        .unwrap();
+    world.journey.as_mut().unwrap().encounter_chance = 100;
+    world.hour = 20;
+    world.minute = 0;
+    let date = world.date;
+    let walked = world.journey.unwrap().leagues_walked;
+
+    let events = world.apply(Command::Wait { hours: 6 }).unwrap();
+
+    assert_eq!(world.date, date.next_day());
+    assert_eq!((world.hour, world.minute), (0, 0));
+    assert!(world.clock_paused);
+    assert_eq!(world.journey.unwrap().leagues_walked, walked);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, Event::RoadEncounter { .. })));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, Event::DayPassed { .. })));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, Event::Waited { hours: 4, .. })));
+}
+
+#[test]
+fn the_date_rolls_at_twenty_four_hours() {
+    let mut world = first_leg();
+    let start = world.date;
+    let events = world.apply(Command::Wait { hours: 24 }).unwrap();
+
+    assert_eq!(world.date, start.next_day());
+    assert_eq!((world.hour, world.minute), (0, 0));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        Event::DayPassed { date } if *date == world.date
+    )));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, Event::Waited { hours: 24, .. })));
 }

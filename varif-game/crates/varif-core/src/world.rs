@@ -1,6 +1,6 @@
 //! The state of the world: tables of places, roads and people, plus the party.
 
-use crate::calendar::{Date, DAYS_PER_YEAR, HOURS_PER_DAY};
+use crate::calendar::{Date, DAYS_PER_YEAR, HOURS_PER_DAY, MINUTES_PER_DAY, MINUTES_PER_HOUR};
 use crate::character::Character;
 use crate::faction::{FactionId, Hostility};
 use crate::ids::{PersonId, PlaceId, SiteId};
@@ -8,6 +8,7 @@ use crate::npc::{DialogueLine, Standing};
 use crate::rng::Rng;
 use crate::schedule::{Schedule, Whereabouts};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlaceKind {
@@ -261,17 +262,64 @@ pub struct JournalEntry {
     pub text: String,
 }
 
+/// How the world clock moves. Stored on the world. The core never reads the
+/// operating system clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TimeMode {
+    /// The host passes elapsed minutes into [`crate::World::advance`].
+    /// Passive time moves the clock only while it is not paused.
+    RealTime,
+    /// Passive elapsed time does nothing. Time moves when a command spends
+    /// it, or on an explicit step.
+    #[default]
+    TurnBased,
+}
+
+impl TimeMode {
+    /// The other mode, for a control that switches.
+    pub fn other(self) -> TimeMode {
+        match self {
+            TimeMode::RealTime => TimeMode::TurnBased,
+            TimeMode::TurnBased => TimeMode::RealTime,
+        }
+    }
+}
+
+impl fmt::Display for TimeMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TimeMode::RealTime => write!(f, "real time"),
+            TimeMode::TurnBased => write!(f, "turn-based"),
+        }
+    }
+}
+
 /// Everything that is true of the world at one moment.
 ///
 /// The fields are public so that a front end can read them freely. Change the
-/// world only through [`World::apply`], so that every change produces events.
+/// world only through [`World::apply`], except the host may pass elapsed
+/// minutes to [`World::advance`] while [`TimeMode::RealTime`] is set and the
+/// clock is not paused.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct World {
     pub date: Date,
-    /// The hour of the day, from 0 to 23. Serialized with the date. Actions
-    /// advance it, and crossing 24 rolls [`World::date`] with the calendar.
+    /// The hour of the day, from 0 to 23. This is the world's clock, together
+    /// with [`World::date`] and [`World::minute`]. There is no second clock.
+    /// Serialized with the world. Only [`World::advance`] moves it.
     #[serde(default)]
     pub hour: u32,
+    /// The minute of the hour, from 0 to 59. Serialized with the date and the
+    /// hour. Schedules ignore it and keep using the absolute hour.
+    #[serde(default)]
+    pub minute: u32,
+    /// Real time or turn-based.
+    #[serde(default)]
+    pub time_mode: TimeMode,
+    /// Set when an event needs the player. Real-time elapsed time does
+    /// nothing while this is set. A command that spends time clears it, and
+    /// sets it again if that command stops on a new event.
+    #[serde(default)]
+    pub clock_paused: bool,
     pub rng: Rng,
     pub places: Vec<Place>,
     pub roads: Vec<Road>,
@@ -556,25 +604,42 @@ impl World {
     /// Reads a world written by [`World::to_ron`].
     pub fn from_ron(text: &str) -> Result<World, String> {
         let mut world: World = ron::from_str(text).map_err(|e| e.to_string())?;
-        world.settle_hour();
+        world.settle_clock();
         world.grant_follower_factions();
         Ok(world)
     }
 
-    /// Folds an hour of 24 or more into the date, so the clock stays at 0–23.
-    fn settle_hour(&mut self) {
-        let total = u64::from(self.hour);
-        let days = (total / u64::from(HOURS_PER_DAY)) as u32;
-        self.hour = (total % u64::from(HOURS_PER_DAY)) as u32;
+    /// Folds extra hours and minutes into the date, so the clock stays at
+    /// hour 0–23 and minute 0–59.
+    fn settle_clock(&mut self) {
+        let total = u64::from(self.hour) * u64::from(MINUTES_PER_HOUR) + u64::from(self.minute);
+        let day = u64::from(MINUTES_PER_DAY);
+        let days = (total / day) as u32;
+        let rest = total % day;
+        self.hour = (rest / u64::from(MINUTES_PER_HOUR)) as u32;
+        self.minute = (rest % u64::from(MINUTES_PER_HOUR)) as u32;
         if days > 0 {
             self.date = self.date.plus_days(days);
         }
     }
 
+    /// Minutes from now until the next midnight. At midnight itself this is
+    /// a full day, so a check never lands on a zero-length step.
+    pub(crate) fn minutes_until_midnight(&self) -> u32 {
+        let now = self
+            .hour
+            .saturating_mul(MINUTES_PER_HOUR)
+            .saturating_add(self.minute);
+        MINUTES_PER_DAY.saturating_sub(now).max(1)
+    }
+
     /// Hours from hour 0 of year 0 to the current date and hour.
+    ///
+    /// The minute within the hour is ignored. Schedule lookup uses this and
+    /// does not tick any NPC.
     pub fn absolute_hour(&self) -> u64 {
-        let days = u64::from(self.date.year) * u64::from(DAYS_PER_YEAR)
-            + u64::from(self.date.day_of_year);
+        let days =
+            u64::from(self.date.year) * u64::from(DAYS_PER_YEAR) + u64::from(self.date.day_of_year);
         days * u64::from(HOURS_PER_DAY) + u64::from(self.hour)
     }
 

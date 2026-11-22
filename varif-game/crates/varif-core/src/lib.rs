@@ -19,7 +19,7 @@ pub mod rng;
 pub mod schedule;
 pub mod world;
 
-pub use calendar::{Date, DAYS_PER_WEEK, HOURS_PER_DAY};
+pub use calendar::{Date, DAYS_PER_WEEK, HOURS_PER_DAY, MINUTES_PER_HOUR};
 pub use character::{
     Akstada, Blood, Character, Effect, EffectKind, EffectPayload, EquipSlot, Equipped, Heritage,
     Item, ItemType, Rarity, Role, SheetError, Tongue, BASE_ATTITUDE, BASE_FATIGUE, BASE_HEALTH,
@@ -27,8 +27,8 @@ pub use character::{
     SUPPLY_VALUE, SUPPLY_WEIGHT,
 };
 pub use command::{
-    travel_fatigue, Command, CommandError, Event, MemberFatigue, MAKE_CAMP_HOURS, PACK_UP_HOURS,
-    REST_HOURS, UNTIRED_HOURS,
+    travel_fatigue, AdvanceKind, ClockAdvance, Command, CommandError, Event, MemberFatigue,
+    MAKE_CAMP_HOURS, PACK_UP_HOURS, REST_HOURS, UNTIRED_HOURS,
 };
 pub use data::{load_world, DataError};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
@@ -38,5 +38,5 @@ pub use rng::Rng;
 pub use schedule::{RoadLeg, Schedule, Span, Whereabouts};
 pub use world::{
     Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site,
-    SiteKind, Temple, World,
+    SiteKind, Temple, TimeMode, World,
 };

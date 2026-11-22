@@ -26,9 +26,10 @@ use layout::MapLayout;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs, path::Path, process};
 use varif_core::{
-    load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
-    MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
-    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MIN_AGE,
+    load_world, AdvanceKind, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage,
+    Itinerary, MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind,
+    TimeMode, Tongue, World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE,
+    MIN_AGE,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -261,6 +262,10 @@ struct App {
     new_leagues: u32,
     /// How many hours the next travel order lasts. One hour is one league.
     travel_hours: u32,
+    /// How many hours the next wait lasts, from 1 to 24.
+    wait_hours: u32,
+    /// Seconds of real time not yet handed to the world as whole minutes.
+    real_seconds: f32,
     save_path: String,
     /// The result of the last save or load.
     status: String,
@@ -312,6 +317,8 @@ impl App {
             new_place: String::new(),
             new_leagues: 3,
             travel_hours: 8,
+            wait_hours: 1,
+            real_seconds: 0.0,
             save_path: "save.ron".to_string(),
             status: String::new(),
             tab: Tab::Map,
@@ -709,6 +716,9 @@ fn choice(
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if matches!(self.stage, Stage::Play) {
+            self.tick_real_time(ui);
+        }
         if !self.touch && ui.ctx().input(|i| i.has_touch_screen()) {
             self.touch = true;
         }
@@ -749,7 +759,8 @@ impl App {
     fn play_wide(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
         egui::Panel::top("top_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.heading(format!("{}, hour {}", self.world.date, self.world.hour));
+                ui.heading(clock_text(&self.world));
+                clock_switch(ui, &self.world, action);
                 ui.separator();
                 self.save_controls(ui, action);
                 ui.label(&self.status);
@@ -764,7 +775,13 @@ impl App {
             .default_size(300.0)
             .show(ui, |ui| {
                 ui.add_enabled_ui(!self.world_locked(), |ui| {
-                    party_panel(ui, &self.world, &mut self.draft, action);
+                    party_panel(
+                        ui,
+                        &self.world,
+                        &mut self.draft,
+                        &mut self.wait_hours,
+                        action,
+                    );
                 });
             });
 
@@ -788,7 +805,8 @@ impl App {
     fn play_compact(&mut self, ui: &mut egui::Ui, action: &mut Option<Action>) {
         egui::Panel::top("top_bar_compact").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.strong(format!("{}, hour {}", self.world.date, self.world.hour));
+                ui.strong(clock_text(&self.world));
+                clock_switch(ui, &self.world, action);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("Save / Load", |ui| {
                         ui.set_min_width(220.0);
@@ -847,7 +865,13 @@ impl App {
                     .auto_shrink(false)
                     .show(ui, |ui| {
                         ui.add_enabled_ui(!self.world_locked(), |ui| {
-                            party_panel(ui, &self.world, &mut self.draft, action);
+                            party_panel(
+                                ui,
+                                &self.world,
+                                &mut self.draft,
+                                &mut self.wait_hours,
+                                action,
+                            );
                         });
                     });
             }
@@ -925,8 +949,30 @@ impl App {
             &self.ways,
             &self.heading,
             &mut self.travel_hours,
+            &mut self.wait_hours,
             action,
         );
+    }
+
+    /// Hands this frame's elapsed minutes to the world clock. The core does
+    /// not read the operating system clock. Turn-based mode, and a paused
+    /// clock, ignore the minutes.
+    fn tick_real_time(&mut self, ui: &egui::Ui) {
+        let dt = ui.input(|input| input.stable_dt);
+        if self.world.time_mode != TimeMode::RealTime || self.world.clock_paused {
+            self.real_seconds = 0.0;
+            return;
+        }
+        self.real_seconds += dt;
+        let minutes = (self.real_seconds / 60.0) as u32;
+        if minutes == 0 {
+            return;
+        }
+        self.real_seconds -= minutes as f32 * 60.0;
+        let moved = self.world.advance(minutes, AdvanceKind::Elapsed);
+        for event in &moved.events {
+            self.log.push(describe(&self.world, event));
+        }
     }
 }
 
@@ -940,6 +986,7 @@ fn question(
     ways: &Option<(PlaceId, Vec<Itinerary>, usize)>,
     heading: &[PlaceId],
     hours: &mut u32,
+    wait_hours: &mut u32,
     action: &mut Option<Action>,
 ) {
     if let Some(journey) = world.journey {
@@ -954,6 +1001,7 @@ fn question(
                         *action = Some(Action::Send(Command::PackUp));
                     }
                 });
+                wait_row(ui, wait_hours, action);
             } else {
                 let left = journey.leagues_left().max(1);
                 ui.strong(format!(
@@ -972,6 +1020,7 @@ fn question(
                         *action = Some(Action::Send(Command::MakeCamp));
                     }
                 });
+                wait_row(ui, wait_hours, action);
             }
         });
     } else if let Some(person) = world.conversation {
@@ -1054,12 +1103,7 @@ fn question(
 
 /// The left panel: where the party is, the sites inside the place, and the
 /// roads out.
-fn place_panel(
-    ui: &mut egui::Ui,
-    world: &World,
-    hours: &mut u32,
-    action: &mut Option<Action>,
-) {
+fn place_panel(ui: &mut egui::Ui, world: &World, hours: &mut u32, action: &mut Option<Action>) {
     let here = world.party_at;
     let Some(place) = world.place(here) else {
         ui.label("The party is nowhere.");
@@ -1193,7 +1237,13 @@ fn place_panel(
 }
 
 /// The right panel: the party, the camp and the journal.
-fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mut Option<Action>) {
+fn party_panel(
+    ui: &mut egui::Ui,
+    world: &World,
+    draft: &mut String,
+    wait_hours: &mut u32,
+    action: &mut Option<Action>,
+) {
     ui.heading("Party");
     for person in world.party() {
         ui.label(format!("{} ({})", person.name, person.title));
@@ -1310,6 +1360,7 @@ fn party_panel(ui: &mut egui::Ui, world: &World, draft: &mut String, action: &mu
             ui.label("Camped.");
         }
     });
+    wait_row(ui, wait_hours, action);
 
     ui.separator();
     ui.heading("Journal");
@@ -1679,7 +1730,41 @@ fn describe(world: &World, event: &Event) -> String {
         Event::ScheduleChanged { person } => {
             format!("{} keeps a new schedule.", person_name(world, *person))
         }
+        Event::Waited { hours, .. } => format!("The party waits {hours} hours."),
+        Event::Stepped { .. } => "An hour passes.".to_string(),
+        Event::TimeModeChanged { mode } => format!("The clock is now {mode}."),
     }
+}
+
+fn clock_text(world: &World) -> String {
+    let paused = if world.clock_paused { "  paused" } else { "" };
+    format!(
+        "{}, {:02}:{:02}{} ({})",
+        world.date, world.hour, world.minute, paused, world.time_mode
+    )
+}
+
+fn clock_switch(ui: &mut egui::Ui, world: &World, action: &mut Option<Action>) {
+    let next = world.time_mode.other();
+    if ui
+        .button("Switch clock")
+        .on_hover_text(format!("Change to {next}"))
+        .clicked()
+    {
+        *action = Some(Action::Send(Command::SetTimeMode { mode: next }));
+    }
+}
+
+fn wait_row(ui: &mut egui::Ui, wait_hours: &mut u32, action: &mut Option<Action>) {
+    ui.horizontal(|ui| {
+        ui.add(egui::Slider::new(wait_hours, 1..=24).text("wait"));
+        if ui.button("Wait").clicked() {
+            *action = Some(Action::Send(Command::Wait { hours: *wait_hours }));
+        }
+        if ui.button("Step").clicked() {
+            *action = Some(Action::Send(Command::Step));
+        }
+    });
 }
 
 fn person_name(world: &World, id: PersonId) -> &str {

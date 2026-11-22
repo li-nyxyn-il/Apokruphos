@@ -4,10 +4,11 @@
 //! `cargo run -- data/first_leg.ron`.
 
 use std::io::{self, BufRead, Write};
+use std::time::Instant;
 use std::{env, fs, process};
 use varif_core::{
-    load_world, Command, EquipSlot, Event, Itinerary, MemberFatigue, PersonId, Place, PlaceId,
-    World,
+    load_world, AdvanceKind, Command, EquipSlot, Event, Itinerary, MemberFatigue, PersonId, Place,
+    PlaceId, TimeMode, World,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -44,6 +45,14 @@ Commands:
   rest            sleep eight hours in camp; spends one food, one water
                   and one wood
   pack            pack up the camp; this takes an hour
+  wait <hours>    wait from 1 to 24 hours; on the road an encounter
+                  stops the wait and the rest of the order is not spent
+  step            pass one hour
+  mode            show whether the clock is real time or turn-based
+  mode real       follow elapsed minutes from this program, while the
+                  clock is not paused; the game never reads the clock itself
+  mode turn       ignore elapsed minutes; time moves when a command spends
+                  it, or on step
   sleep           sleep a day at an inn for 5 copper, or at a residence
                   for free
   write <text>    add a journal entry
@@ -85,7 +94,12 @@ fn main() {
     let mut heading: Vec<PlaceId> = Vec::new();
     // Where the party was when the loop last looked, to notice an arrival.
     let mut seen_at = world.party_at;
+    let mut host_clock = HostClock {
+        last: Instant::now(),
+        carry_ms: 0,
+    };
     loop {
+        pass_elapsed(&mut world, &mut host_clock);
         // Just arrived somewhere: first ask about anyone who could join.
         if world.journey.is_none() && world.party_at != seen_at {
             seen_at = world.party_at;
@@ -118,7 +132,7 @@ fn main() {
             _ if world.journey.is_some() && world.camped => print!("Sleep in camp? (y/n) "),
             _ if world.journey.is_some() => {
                 let left = world.journey.unwrap().leagues_left();
-                print!("On the road, {left} leagues left. Hours to travel, or camp? ")
+                print!("On the road, {left} leagues left. Hours to travel, camp, or wait? ")
             }
             Asking::WhichWay { routes, .. } => {
                 print!("Which way? (1-{}, or n to stay) ", routes.len())
@@ -171,7 +185,7 @@ fn main() {
             continue;
         }
 
-        if world.journey.is_some() {
+        if world.journey.is_some() && !is_clock_command(&answer) {
             if world.camped {
                 match answer.as_str() {
                     "y" | "yes" => {
@@ -308,6 +322,11 @@ fn main() {
             "pack" => {
                 run(&mut world, Command::PackUp);
             }
+            "wait" => wait(&mut world, rest),
+            "step" => {
+                run(&mut world, Command::Step);
+            }
+            "mode" | "time" => set_mode(&mut world, rest),
             "sleep" => {
                 run(&mut world, Command::Sleep);
             }
@@ -354,7 +373,10 @@ enum Asking {
     Recruit(Vec<PersonId>),
     /// Several ways lead to the place; the player picks one by number.
     /// `hours` is how long the first order on that way lasts.
-    WhichWay { routes: Vec<Itinerary>, hours: u32 },
+    WhichWay {
+        routes: Vec<Itinerary>,
+        hours: u32,
+    },
     /// Walk to the first of these stops? The rest follow, one question each.
     NextStop {
         stops: Vec<PlaceId>,
@@ -666,7 +688,79 @@ fn describe(world: &World, event: &Event) -> String {
         Event::ScheduleChanged { person } => {
             format!("{} keeps a new schedule.", person_name(world, *person))
         }
+        Event::Waited { hours, .. } => format!("The party waits {hours} hours."),
+        Event::Stepped { .. } => "An hour passes.".to_string(),
+        Event::TimeModeChanged { mode } => format!("The clock is now {mode}."),
     }
+}
+
+/// Minutes the host has measured and not yet handed to the world clock.
+struct HostClock {
+    last: Instant,
+    carry_ms: u128,
+}
+
+/// Passes minutes this process has seen since the last call. The core does
+/// not read the operating system clock. In turn-based mode, and while the
+/// clock is paused, the call is still made and the world ignores it.
+fn pass_elapsed(world: &mut World, clock: &mut HostClock) {
+    let elapsed = clock.last.elapsed();
+    clock.last = Instant::now();
+    if world.time_mode != TimeMode::RealTime || world.clock_paused {
+        clock.carry_ms = 0;
+        return;
+    }
+    clock.carry_ms += elapsed.as_millis();
+    let minutes = clock.carry_ms / 60_000;
+    clock.carry_ms %= 60_000;
+    if minutes == 0 {
+        return;
+    }
+    let minutes = u32::try_from(minutes).unwrap_or(u32::MAX);
+    let moved = world.advance(minutes, AdvanceKind::Elapsed);
+    for event in &moved.events {
+        println!("{}", describe(world, event));
+    }
+}
+
+fn is_clock_command(answer: &str) -> bool {
+    matches!(
+        answer.split_whitespace().next(),
+        Some("wait" | "step" | "mode" | "time")
+    )
+}
+
+fn wait(world: &mut World, rest: &str) {
+    match rest.parse::<u32>() {
+        Ok(hours) => {
+            run(world, Command::Wait { hours });
+        }
+        Err(_) => println!("Wait from 1 to 24 hours: wait <hours>."),
+    }
+}
+
+fn set_mode(world: &mut World, rest: &str) {
+    let mode = match rest {
+        "real" | "realtime" | "real-time" => TimeMode::RealTime,
+        "turn" | "turns" | "turn-based" | "turnbased" => TimeMode::TurnBased,
+        "" => {
+            println!("{}", clock_line(world));
+            return;
+        }
+        _ => {
+            println!("Use: mode real, or mode turn.");
+            return;
+        }
+    };
+    run(world, Command::SetTimeMode { mode });
+}
+
+fn clock_line(world: &World) -> String {
+    let paused = if world.clock_paused { ", paused" } else { "" };
+    format!(
+        "{}, {:02}:{:02} ({}){paused}",
+        world.date, world.hour, world.minute, world.time_mode
+    )
 }
 
 fn sheet(world: &World) {
@@ -782,7 +876,7 @@ fn look(world: &World) {
         return;
     };
 
-    println!("{}, hour {}", world.date, world.hour);
+    println!("{}", clock_line(world));
     println!("{} ({:?})", place.name, place.kind);
     if let Some(temple) = &place.temple {
         let state = if temple.ruined { ", in ruins" } else { "" };
