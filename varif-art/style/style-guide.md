@@ -1,10 +1,10 @@
 # Varif art style guide
 
-Draft 2 — 2026-11-15 (America/Chicago), tile grid updated 2026-11-16. Engine-neutral, handmade pixel art.
+Draft 2 — 2026-11-15 (America/Chicago), tile grid updated 2026-11-16, palette moved to v2.1 on 2026-11-21. Engine-neutral, handmade pixel art.
 
 This is a production bible for a human artist working in Photoshop or a similar editor. The concept paintings and the landscape photographs are look-dev, not sources to trace, filter, or run through an image model. All game art is drawn by hand on the locked palette.
 
-Locked colour set: `palette.md` (v2, 79 colours), `palette.png`, `palette.hex`, `palette.gpl`, `palette.aco`, `palette.ase`. The v1 set and this guide's previous draft are archived as `palette-v1.*` and `style-guide-v1.md`.
+Locked colour set: **`palette-v2.1.md` (v2.1, 91 colours)**, `palette-v2.1.png`, `palette-v2.1.hex`, `palette-v2.1.gpl`, `palette-v2.1.aco`, `palette-v2.1.ase`. v2.1 is the 79 v2 colours, unchanged, plus 12 measured colours for the Price Line, Ptormyk, Niaviopti, and southern Maphlia / old Yhlgori (see [Palette change log](#palette-change-log)). v2 stays beside it as `palette.md` and `palette.*`. The v1 set and this guide's previous draft are archived as `palette-v1.*` and `style-guide-v1.md`.
 
 ## Art pillars
 
@@ -117,7 +117,17 @@ Mountains and valleys remain the thematic centre, but they are no longer a singl
 
 **Appalachian ridge.** The atmospheric ramp *is* the subject: stacked ridges fading to Horizon Veil, tan fields in Straw Mid / Straw Lit, near treelines in Near Mass and Charcoal (winter) or Needle Dark (summer). Overcast Ivory skies. The winter valley and the Blue Ridge sunset (warmer, golden-hour variant) are the references.
 
-Shared architecture (keeps, cut ashlar, roads) still uses Cold Ashlar, Cliff Teal, and the warm-stone ramp in every biome, so a Line keep does not change hue family when the map tiles do.
+**Ptormyk (v2.1).** Yellows and purples, with Japanese-Norse timber-on-stone buildings. Valley grass is Needle Mid → Straw Mid → Ptormyk Grass Sun (golden in sun, greener in shade). Mountains are Deep Blue Blood → Violet Rock → Violet Rock Lit; the snow on them stays cool blue-grey (Blue Skin, Snow Lit), and the violet read comes from the rock. Lakes are Ptormyk Lake Deep and Ptormyk Lake, the most saturated water in the set. Reference: `ptormyk_mountain_valley.jpg`.
+
+**Southern Maphlia / Maphyk Hylvanne piedmont (v2.1).** Golden-grass plains (Granite Shade → Yhlgori Sandstone → Straw Lit), tan granite peaks and gorges (Sandstone → Spire Gold → Sunset Gold), waterfalls by the v2 cascade rule (Snow Lit or Ivory), and teal-blue lakes (Hylvanne Lake, Distance Blue). Most of this region was already in v2; only Hylvanne Lake is new for the terrain. References: `hylvynhani.jpg`, `hylvynhani_upper_city.jpg`, `hylvynhani_falls.jpg`, `klate.jpg`.
+
+**Old Yhlgori architecture (v2.1).** The cities the Yhlgori Empire built after it conquered the Neck (Hylvynhani, Klate) share one building language wherever they stand: sandstone cliff and hill cities, aqueducts, arched bridges, terraced Greco-Roman temples, city walls, gold spires. Walls run Straw Shade → Yhlgori Sandstone → Ornament Gold → Sunset Gold; spires are Spire Gold with Straw Sun on the sunlit edge. Author it as one tileset, separate from the regional terrain, so a Yhlgori site in any biome uses the same blocks.
+
+**Line colours (v2.1).** Audsen keeps maroon and gold: Cloth reds plus the Gold / bronze ramp, unchanged. Price uses Price Plum Shade / Plum / Plum Lit for purple, Ptormyk Lake Deep and Ptormyk Lake for blue, and Pale Silver and Ivory for white. Price Plum and Audsen Cloak Shade are 42° apart in hue, so the two Lines stay distinct on a banner.
+
+**Niaviopti (v2.1).** White gold is Straw Shade → Yhlgori Sandstone → Warm Silver; the pearl pommel is Lime Lit → Silver Highlight → Pearl White (one or two pixels); the faint orange glow is Flame Mid and Sunset Mid, as in the shipped mythic icons.
+
+Shared architecture (keeps, cut ashlar, roads) still uses Cold Ashlar, Cliff Teal, and the warm-stone ramp in every biome, so a Line keep does not change hue family when the map tiles do. Old Yhlgori builds are the exception above: they keep their own sandstone and gold in every biome.
 
 ## From the paintings (and photos) to pixels
 
@@ -134,15 +144,15 @@ The references are oil paintings, museum photos, and photographs: soft edges, hu
 Handmade in Photoshop or a close equivalent (Clip Studio, Krita, Aseprite). This is the intended setup:
 
 - **Document.** New file in **pixels**, 72 ppi is fine, with an exact canvas (32×16 floor tile, 32×32 character or 1-step block, 16×16 token, 8×8 or 16×16 banner, or a power-of-two atlas). Do not start from a print preset or a 300 ppi sheet.
-- **Swatches.** Load `palette.aco` or `palette.ase` into the Swatches panel (panel menu → Load Swatches… or Replace Swatches…). Keep a dedicated Varif set. Pick only from it.
+- **Swatches.** Load `palette-v2.1.aco` or `palette-v2.1.ase` into the Swatches panel (panel menu → Load Swatches… or Replace Swatches…). Keep a dedicated Varif set. Pick only from it.
 - **Pencil, not Brush.** Use the Pencil tool at 1 px, 100% opacity and hardness. The Brush tool anti-aliases and will dirty the palette.
 - **No anti-aliasing.** Turn anti-alias off on the Pencil, Eraser (block / pencil mode), Marquee, Lasso, Magic Wand, Elliptical and Custom Shape tools, and on type if you set any bitmap labels. Do not use Smooth, Align Edges, or stroke with anti-aliased brushes.
 - **Nearest-neighbour resampling.** Set image interpolation to **Nearest Neighbor** in Preferences, and again whenever you use Image Size or Free Transform. Never resample a sprite with Bicubic or Bilinear. Judge pixels at 100%, 200%, 400%, or 800% zoom only.
 - **Snap and grid.** Turn on a 1 px grid (or a 16 px grid with 1 px subdivisions; a 32×16 diamond guide is useful for floor tiles), enable Snap to Grid / Snap to Pixels, and keep the pixel grid visible at high zoom.
-- **Indexed colour against the palette.** When a sprite or a tile sheet is finished in RGB, run **Image → Mode → Indexed Color**. Palette: Custom (load the `.aco`, or an ACT exported from it). **Dither: None.** Forced: None, unless you have a deliberate reason to force black and white. Confirm the colour table is only the 79 locked colours, then save. Working in RGB with the swatch panel is fine day to day; index as a check before a sheet is committed, so no stray off-palette pixel leaves the file.
+- **Indexed colour against the palette.** When a sprite or a tile sheet is finished in RGB, run **Image → Mode → Indexed Color**. Palette: Custom (load the `.aco`, or an ACT exported from it). **Dither: None.** Forced: None, unless you have a deliberate reason to force black and white. Confirm the colour table is only the 91 locked v2.1 colours, then save. Working in RGB with the swatch panel is fine day to day; index as a check before a sheet is committed, so no stray off-palette pixel leaves the file.
 - **Export.** PNG, sharp pixels, no baked preview filtering. PNG-8 indexed or PNG-24 that still contains only palette colours. Do not pre-scale to screen size in the file; the engine scales with point sampling.
 
-Aseprite or a similar specialist tool is compatible with this guide (import `palette.gpl` or `palette.ase`, nearest-neighbour, no anti-alias). The same rules apply.
+Aseprite or a similar specialist tool is compatible with this guide (import `palette-v2.1.gpl` or `palette-v2.1.ase`, nearest-neighbour, no anti-alias). The same rules apply.
 
 ## Character rules
 
@@ -253,7 +263,7 @@ The floor grid and character canvas were confirmed on 2026-11-16. Remaining item
 - Unit token: **16×16** (default).
 - Banner / strategic icon: **8×8** or **16×16** (default).
 - Projection: 2:1 isometric, three-quarter characters at Tiers 1–2 (confirmed 2026-11-16).
-- Palette: **79 colours**, locked, see `palette.md` (v2).
+- Palette: **91 colours**, locked, see `palette-v2.1.md` (v2.1). v2 (79) kept as `palette.md`.
 
 ## Reference list
 
@@ -298,7 +308,26 @@ Mostly the user's own photographs, plus two museum / reproduction paintings. Wor
 30. **`4901f966.png`** — Albert Bierstadt painting, from a phone screenshot of an X post (phone UI and compose button cropped or masked before measuring). *Take:* cathedral light in a mountain valley, gold air, a luminous far gap, dark near shore.
 31. **`8649050e.jpg`** — Sun through forest, backlit orange. *Take:* the sunset-orange ramp, Forest Shade as the tree mass, a small hard sun.
 
-Further landscape (and other) references will be added. When they arrive, follow `analysis/README.md` and the update steps in `palette.md` rather than colour-picking ad hoc.
+### Game references (2026-11-20 sweep, four)
+
+These are direction only. Do not copy, trace, or borrow designs. Take zoom readability, lighting, and terrain-structure lessons.
+
+32. **Songs of Conquest** (Lavapotion) — [Steam](https://store.steampowered.com/app/867210/Songs_of_Conquest/). Pixel units and towns that stay readable on a big lit adventure map, with strong silhouettes when zoomed out. *Take:* zoom-out readability and silhouette. *Use:* the grand-strategy zoom tier, for low-detail units and settlements.
+33. **Blood of Rome** (Pixelatus, isometric pixel, planned December 2026) — [Steam](https://store.steampowered.com/app/2659460/Blood_of_Rome/). Roman helmets, shields, and cloaks that keep their weight at small isometric scale and stay clear in tight formations. *Take:* clarity of Roman kit at small scale and in formation. *Use:* Roman-inspired troop sprites on the 32×16 grid; clarity lessons only, not their soldier designs.
+34. **Laysara: Summit Kingdom** (Quite OK Games, February 2026) — [Steam](https://store.steampowered.com/app/1823950/Laysara_Summit_Kingdom/). Mountains split into vegetation zones by altitude, with weather and avalanches that change the terrain. *Take:* altitude vegetation bands and weather that rewrites terrain. *Use:* Shentz Valley and Utzkva'hjun tiles, with those bands mapping onto palette v2 (golden-green valleys, then grey rock, then snow).
+35. **Sea of Stars** (Sabotage Studio) — [seaofstarsgame.co](https://seaofstarsgame.co/). Pixel sprites lit with normal maps while the sun and moon move. *Take:* normal-mapped pixel lighting with a moving sun and moon. *Use:* palette v2 day and night modes, so the red stars and the bronze moon can throw real light across the terrain at night.
+
+### Concept art (v2.1 palette sources, five plus two)
+
+36. **`ptormyk_mountain_valley.jpg`** — Timber-and-stone shrine with a curved tiled roof beside a blue lake under violet peaks. *Take:* the Ptormyk yellows and purples. Palette source for the Ptormyk grass, violet rock, snow, and lake ramps.
+37. **`hylvynhani.jpg`** — Cliff city on an aqueduct above a waterfall, granite spires, a lake and golden plain below. *Take:* old Yhlgori sandstone, tan granite, golden grass, lake.
+38. **`hylvynhani_upper_city.jpg`** — The upper city: terraced sandstone and three gold spires over a gorge river. *Take:* spire gold, sandstone mass.
+39. **`hylvynhani_falls.jpg`** — The falls, aqueduct, and lake from the plain. *Take:* sandstone, plain, lake.
+40. **`klate.jpg`** — Walled hill city, terraced temples, an arched bridge over a gorge, sunset. *Take:* Yhlgori walls and terraces.
+41. **`niaviopti.jpg`** — The Niaviopti sword painting. *Take:* white gold and the pearl pommel.
+42. **`emanda-price.png`** — Emanda Price portrait (Price Line). *Take:* the Price plum.
+
+Further landscape (and other) references will be added. When they arrive, follow `analysis/README.md` and the update steps in `palette-v2.1.md` rather than colour-picking ad hoc.
 
 ## Sources and conflicts
 
@@ -329,3 +358,9 @@ Visual facts taken from Drive (read only; nothing on Drive was edited) are marke
 - The original eleven chat attachments did not all materialise on disk; the same pictures were recovered from Drive by size and content. `rites 2.webp` was inspected and is not in the locked reference set.
 
 The floor grid (32×16, 2:1 isometric) and the 32×32 character canvas were confirmed on 2026-11-16. The render engine is still undecided. See `sprite-tile-spec.md`, `naming-convention.md`, and `shot-list.md`.
+
+## Palette change log
+
+- **2026-11-21 — palette v2.1 (91 colours).** The guide now points to `palette-v2.1.*`. Added 12 measured colours in 11 new ramps: Price Line purples (3), Pearl White for Niaviopti (1), Ptormyk Grass Sun, Violet Rock, Violet Rock Lit, Ptormyk Lake Deep, Ptormyk Lake (5), Yhlgori Sandstone, Spire Gold, Hylvanne Lake (3). Measured in OKLab from the concept art above with documented masks and even lightness steps; 23 of 35 measured steps matched an existing swatch within OKLab 0.03 and reuse it. No v2 colour changed or removed. Recommended cap raised from 80 to 96. Biome notes added for Ptormyk, southern Maphlia / Maphyk Hylvanne, old Yhlgori architecture, Line colours, and Niaviopti. Details: `palette-v2.1.md`.
+- **2026-11-15 — palette v2 (79 colours).** Core / night / daylight modes from the twenty landscape references. See `palette.md`.
+- **2026-11-15 — palette v1 (48 colours).** First locked set. Archived as `palette-v1.*`.
