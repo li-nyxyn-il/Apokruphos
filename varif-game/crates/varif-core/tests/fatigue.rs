@@ -49,7 +49,25 @@ fn copper(world: &World) -> u32 {
         .sum()
 }
 
+fn travel_to(world: &mut World, stop: &str) {
+    let to = world.find_place(stop).unwrap();
+    while world.party_at != to || world.journey.is_some() {
+        let left = world
+            .journey
+            .map(|journey| journey.leagues_left())
+            .unwrap_or_else(|| world.road_between(world.party_at, to).unwrap().leagues);
+        world
+            .apply(Command::Travel {
+                to,
+                hours: left.min(8),
+            })
+            .unwrap();
+    }
+}
+
 fn on_the_canyon(world: &mut World) {
+    travel_to(world, "falls");
+    travel_to(world, "yhlgrym");
     let atzhaim = world.find_place("atzhaim").unwrap();
     world
         .apply(Command::Travel {
@@ -116,21 +134,21 @@ fn road_camping_restores_five_and_holds_the_ceiling() {
 #[test]
 fn an_inn_night_follows_the_examples_and_lifts_the_ceiling() {
     let mut world = first_leg();
-    let yhlgrym = world.party_at;
+    let here = world.party_at;
 
     let before = world.clone();
     assert_eq!(world.apply(Command::Sleep), Err(CommandError::NotAtAnInn));
     assert_eq!(world, before, "a refused sleep changes nothing");
 
-    let krypt = world.place(yhlgrym).unwrap().find_site("krypt").unwrap();
-    world.apply(Command::Walk { to: krypt }).unwrap();
+    let palace = world.place(here).unwrap().find_site("palace").unwrap();
+    world.apply(Command::Walk { to: palace }).unwrap();
     let before = world.clone();
     assert_eq!(world.apply(Command::Sleep), Err(CommandError::NotAtAnInn));
     assert_eq!(world, before);
 
-    let inn = world.place(yhlgrym).unwrap().find_site("inn").unwrap();
+    let inn = world.place(here).unwrap().find_site("inn").unwrap();
     assert_eq!(
-        world.place(yhlgrym).unwrap().site(inn).unwrap().kind,
+        world.place(here).unwrap().site(inn).unwrap().kind,
         SiteKind::Inn
     );
     world.apply(Command::Walk { to: inn }).unwrap();
@@ -208,7 +226,7 @@ fn a_residence_sleeps_by_the_same_rule() {
 #[test]
 fn travel_fatigue_skips_a_member_without_a_sheet() {
     let mut world = first_leg();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = world.find_place("falls").unwrap();
     world
         .people
         .iter_mut()
@@ -219,7 +237,7 @@ fn travel_fatigue_skips_a_member_without_a_sheet() {
     // Nine hours is one extra hour, which costs 1, and only the Pylgrym pays.
     let events = world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 9,
         })
         .unwrap();
@@ -242,7 +260,7 @@ fn travel_fatigue_skips_a_member_without_a_sheet() {
     let before = world.clone();
     assert_eq!(
         world.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 9,
         }),
         Err(CommandError::TooTired)

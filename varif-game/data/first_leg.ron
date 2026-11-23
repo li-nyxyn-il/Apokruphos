@@ -17,7 +17,7 @@
         day: 1,
         // Change the seed to get a different run of road encounters.
         seed: 192,
-        party_at: "yhlgrym",
+        party_at: "sthepenhall",
     ),
 
     places: [
@@ -185,6 +185,14 @@
             key: "sthepenhall",
             name: "Sthepenhall",
             kind: Town,
+            sites: [
+                (key: "gate", name: "Gate", kind: Gate), // ASSUMPTION
+                (key: "palace", name: "Palace", kind: Palace), // ASSUMPTION
+                (key: "market", name: "Market", kind: Market), // ASSUMPTION
+                (key: "forum", name: "Forum", kind: Landmark), // ASSUMPTION
+                (key: "dock", name: "Dock", kind: Landmark), // ASSUMPTION
+                (key: "inn", name: "Inn", kind: Inn), // ASSUMPTION
+            ],
         ),
 
         // ---- Added from the map. None of these has sites yet. ----
@@ -537,7 +545,7 @@
             key: "pylgrym",
             name: "The Pylgrym",
             title: "Pylgrym",
-            at: "yhlgrym",
+            at: "sthepenhall",
             in_party: true,
             sheet: (
                 role: Player,
@@ -605,7 +613,7 @@
             key: "donold",
             name: "Donold Audsen",
             title: "Follower",
-            at: "yhlgrym",
+            at: "sthepenhall",
             in_party: true,
             sheet: (
                 role: Npc(follower: true),
