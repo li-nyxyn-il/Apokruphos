@@ -457,9 +457,10 @@ impl EffectKind {
 /// What an [`Effect`] does. This is a closed list: there is no script.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EffectPayload {
-    /// Adds health. A used or consumed effect adds it to the stored health.
-    /// An equipment or inventory effect adds it only while that effect is in
-    /// force, and leaves the stored health alone.
+    /// Adds health. A used or consumed effect adds it to the stored health,
+    /// and never past [`BASE_HEALTH`]. An equipment or inventory effect adds
+    /// it only while that effect is in force, and leaves the stored health
+    /// alone.
     RestoreHealth { amount: u32 },
     /// Raises the maximum resilience. A used or consumed effect raises the
     /// stored maximum. An equipment or inventory effect adds to the maximum
@@ -655,7 +656,7 @@ pub struct Character {
     pub heritage: Heritage,
     pub akstada: Akstada,
     /// How much harm the body can still take. A new character starts at
-    /// [`BASE_HEALTH`].
+    /// [`BASE_HEALTH`]. A used or consumed restore never raises it above that.
     #[serde(default = "base_health")]
     pub health: u32,
     /// How much road the body has left in it. A new character starts at
@@ -894,7 +895,7 @@ impl Character {
     pub(crate) fn apply_instant(&mut self, payload: EffectPayload) {
         match payload {
             EffectPayload::RestoreHealth { amount } => {
-                self.health = self.health.saturating_add(amount);
+                self.health = self.health.saturating_add(amount).min(BASE_HEALTH);
             }
             EffectPayload::RaiseMaxResilience { amount } => {
                 self.resilience_max = self.resilience_max.saturating_add(amount);

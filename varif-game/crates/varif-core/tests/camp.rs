@@ -275,16 +275,16 @@ fn sleeping_in_camp_restores_fatigue_like_a_road_camp() {
     assert!(world.camped);
     assert_eq!(world.date, date);
     assert_eq!(world.hour, 9);
-    // The starting food restores 10 health when the camp consumes it.
-    // Donold carries none, so only the Pylgrym is restored.
-    assert_eq!(party_vitals(&world), vec![(50, 110, 100), (85, 100, 100)]);
+    // The starting food restores 10 health when the camp consumes it, and
+    // never past 100. Donold carries none, so only the Pylgrym would gain,
+    // and both are already at the health cap.
+    assert_eq!(party_vitals(&world), vec![(50, 100, 100), (85, 100, 100)]);
 
-    // The cap is 100, and a night at the ceiling does not go past it.
-    // A second food restores another 10 health.
+    // Fatigue caps at 100. A second food still cannot push health past 100.
     set_fatigue(&mut world, "pylgrym", 98, false);
     set_fatigue(&mut world, "donold", 100, false);
     world.apply(Command::Rest).unwrap();
-    assert_eq!(party_vitals(&world), vec![(100, 120, 100), (100, 100, 100)]);
+    assert_eq!(party_vitals(&world), vec![(100, 100, 100), (100, 100, 100)]);
 }
 
 #[test]
