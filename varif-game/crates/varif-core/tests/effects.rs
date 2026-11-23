@@ -92,6 +92,17 @@ fn the_consumed_sample_restores_ten_health() {
 }
 
 #[test]
+fn a_consumed_restore_stops_at_base_health() {
+    let mut world = first_leg();
+    player_sheet_mut(&mut world).health = 95;
+
+    world.apply(Command::MakeCamp).unwrap();
+    world.apply(Command::Rest).unwrap();
+
+    assert_eq!(player_sheet(&world).health, BASE_HEALTH);
+}
+
+#[test]
 fn the_inventory_sample_raises_max_resilience_by_ten() {
     let mut world = first_leg();
     let sheet = player_sheet(&world);

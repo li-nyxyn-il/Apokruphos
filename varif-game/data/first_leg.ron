@@ -527,7 +527,8 @@
         // sample item effects, and one item for each equipment slot.
         // Weight, value and durability are 1 until a rule names them.
         // Food, water, wood and copper start at Basic rarity.
-        // Food restores 10 health when a camp consumes it. The Hearth Stone
+        // Food restores 10 health when a camp consumes it, never past 100.
+        // The Hearth Stone
         // raises max resilience by 10 while it is carried. The Pulse Cord
         // adds 5 vitality while it is worn, after the derived floor of
         // sqrt(health * fatigue). Worn items are not in this pack until
