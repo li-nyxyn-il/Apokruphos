@@ -26,6 +26,17 @@ fn first_leg() -> World {
     load_world(FIRST_LEG).expect("the first leg data should load")
 }
 
+/// Leaves Sthepenhall onto the road, where a camp may be pitched.
+fn leave_town(world: &mut World) {
+    let falls = world.find_place("falls").unwrap();
+    world
+        .apply(Command::Travel {
+            to: falls,
+            hours: 1,
+        })
+        .unwrap();
+}
+
 fn player_sheet(world: &World) -> &varif_core::Character {
     world
         .player()
@@ -68,6 +79,7 @@ fn the_consumed_sample_restores_ten_health() {
     );
     player_sheet_mut(&mut world).health = 40;
 
+    leave_town(&mut world);
     world.apply(Command::MakeCamp).unwrap();
     let events = world.apply(Command::Rest).unwrap();
 
@@ -96,6 +108,7 @@ fn a_consumed_restore_stops_at_base_health() {
     let mut world = first_leg();
     player_sheet_mut(&mut world).health = 95;
 
+    leave_town(&mut world);
     world.apply(Command::MakeCamp).unwrap();
     world.apply(Command::Rest).unwrap();
 
@@ -285,6 +298,7 @@ fn camp_sleep_consumes_food_and_fires_its_consumed_effect() {
     assert_eq!(holding(&world, "Water"), 5);
     assert_eq!(holding(&world, "Wood"), 5);
 
+    leave_town(&mut world);
     world.apply(Command::MakeCamp).unwrap();
     let events = world.apply(Command::Rest).unwrap();
 

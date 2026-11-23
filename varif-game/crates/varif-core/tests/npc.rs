@@ -36,6 +36,12 @@ fn walk(world: &mut World, stop: &str) {
     }
 }
 
+/// The sample residents of Yhlgrym live there; the party starts in Sthepenhall.
+fn at_yhlgrym(world: &mut World) {
+    walk(world, "falls");
+    walk(world, "yhlgrym");
+}
+
 /// Walks inside the current place to the site `key` stands at.
 fn stand_with(world: &mut World, key: &str) {
     let site = world
@@ -108,9 +114,12 @@ fn the_npcs_where_the_player_is_are_nearby() {
     let syla = person(&world, "syla");
     let mael = person(&world, "mael");
 
-    // The party starts at the North Gate. The warden is there. The Kraiark
-    // is at the krypt, the merchant at the market, the steward at the palace.
-    // The follower is with the party. The player is never listed.
+    // The party starts at Sthepenhall's gate. Only the follower is with them.
+    assert_eq!(world.nearby_npcs(), [donold]);
+
+    // In Yhlgrym the warden is at the North Gate. The Kraiark is at the krypt,
+    // the merchant at the market, the steward at the palace.
+    at_yhlgrym(&mut world);
     assert_eq!(world.nearby_npcs(), [donold, hest]);
 
     stand_with(&mut world, "jonnoj");
@@ -130,6 +139,7 @@ fn the_npcs_where_the_player_is_are_nearby() {
 #[test]
 fn someone_at_another_site_cannot_be_talked_to() {
     let mut world = first_leg();
+    at_yhlgrym(&mut world);
     let syla = person(&world, "syla");
     let before = world.clone();
     assert_eq!(
@@ -165,6 +175,7 @@ fn standing_comes_from_attitude_and_faction_hostility() {
 #[test]
 fn interacting_opens_a_conversation_with_the_lines_on_offer() {
     let mut world = first_leg();
+    at_yhlgrym(&mut world);
     let jonnoj = person(&world, "jonnoj");
     stand_with(&mut world, "jonnoj");
 
@@ -258,6 +269,7 @@ fn a_change_of_attitude_changes_what_can_be_said() {
 #[test]
 fn an_npc_too_hostile_to_talk_to_would_start_combat() {
     let mut world = first_leg();
+    at_yhlgrym(&mut world);
     let jonnoj = person(&world, "jonnoj");
     stand_with(&mut world, "jonnoj");
     // Hostility 1 and attitude 50: friendliness 7, below 10.
@@ -286,6 +298,7 @@ fn an_npc_too_hostile_to_talk_to_would_start_combat() {
 #[test]
 fn friendliness_of_exactly_ten_is_enough_to_talk() {
     let mut world = first_leg();
+    at_yhlgrym(&mut world);
     let jonnoj = person(&world, "jonnoj");
     stand_with(&mut world, "jonnoj");
     world
@@ -345,6 +358,7 @@ fn a_bad_interaction_is_refused() {
 #[test]
 fn a_world_saved_mid_conversation_loads_back_in_it() {
     let mut world = first_leg();
+    at_yhlgrym(&mut world);
     let jonnoj = person(&world, "jonnoj");
     stand_with(&mut world, "jonnoj");
     world.apply(Command::Interact { person: jonnoj }).unwrap();

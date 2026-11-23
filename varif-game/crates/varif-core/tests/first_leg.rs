@@ -57,16 +57,16 @@ fn the_data_loads() {
     let world = first_leg();
     assert_eq!(world.places.len(), 45);
     assert_eq!(world.roads.len(), 54);
-    assert_eq!(world.place_name(world.party_at), "Yhlgrym");
+    assert_eq!(world.place_name(world.party_at), "Sthepenhall");
     assert_eq!(world.date, Date::new(192, 1, 1).unwrap());
     assert_eq!(world.party().count(), 2, "the Pylgrym and Donold Audsen");
 }
 
 #[test]
-fn the_party_walks_from_yhlgrym_to_atzhaim() {
+fn the_party_walks_from_sthepenhall_to_atzhaim() {
     let mut world = first_leg();
     let start = world.date;
-    let events = walk(&mut world, &["atzhaim"]);
+    let events = walk(&mut world, &["falls", "yhlgrym", "atzhaim"]);
 
     let atzhaim = world.find_place("Atzhaim").unwrap();
     assert_eq!(world.party_at, atzhaim);
@@ -90,14 +90,14 @@ fn the_party_walks_from_yhlgrym_to_atzhaim() {
         ]
     );
 
-    // 60 leagues at one league an hour: 60 hours, which is two days and 12 hours.
-    assert_eq!(world.date.days_since(start), 2);
-    assert_eq!(world.hour, 12);
+    // 27 + 15 + 60 leagues at one league an hour: 102 hours, four days and 6 hours.
+    assert_eq!(world.date.days_since(start), 4);
+    assert_eq!(world.hour, 6);
     let days_passed = events
         .iter()
         .filter(|e| matches!(e, Event::DayPassed { .. }))
         .count();
-    assert_eq!(days_passed, 2);
+    assert_eq!(days_passed, 4);
 
     // The party's people move with it.
     assert!(world.party().all(|p| p.at == atzhaim));
@@ -109,12 +109,12 @@ fn the_party_walks_from_yhlgrym_to_atzhaim() {
 }
 
 #[test]
-fn there_is_no_road_straight_to_sthepenhall() {
-    // Sthepenhall is reached by way of the falls.
+fn there_is_no_road_straight_to_yhlgrym() {
+    // Yhlgrym is reached by way of the falls.
     let mut world = first_leg();
     let before = world.clone();
     let from = world.party_at;
-    let to = world.find_place("sthepenhall").unwrap();
+    let to = world.find_place("yhlgrym").unwrap();
 
     let result = world.apply(Command::Travel { to, hours: 1 });
 
@@ -135,15 +135,22 @@ fn travelling_to_where_you_are_is_refused() {
 #[test]
 fn making_camp_takes_an_hour_and_does_not_sleep() {
     let mut world = first_leg();
+    let falls = world.find_place("falls").unwrap();
+    world
+        .apply(Command::Travel {
+            to: falls,
+            hours: 1,
+        })
+        .unwrap();
     let start = world.date;
     let events = world.apply(Command::MakeCamp).unwrap();
     assert!(world.camped);
-    assert_eq!(world.hour, 1);
+    assert_eq!(world.hour, 2);
     assert_eq!(world.date, start);
     assert_eq!(events.len(), 1);
 
     let events = world.apply(Command::Rest).unwrap();
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, 10);
     assert_eq!(world.date, start);
     assert!(world.camped);
     assert!(events
@@ -177,7 +184,7 @@ fn the_journal_records_where_and_when() {
 
 #[test]
 fn the_same_commands_give_the_same_history() {
-    let stops = ["atzhaim"];
+    let stops = ["falls", "yhlgrym", "atzhaim"];
     let mut first = first_leg();
     let mut second = first_leg();
     assert_eq!(walk(&mut first, &stops), walk(&mut second, &stops));
@@ -187,7 +194,7 @@ fn the_same_commands_give_the_same_history() {
 #[test]
 fn a_saved_world_loads_back_identical() {
     let mut world = first_leg();
-    walk(&mut world, &["atzhaim"]);
+    walk(&mut world, &["falls", "yhlgrym", "atzhaim"]);
     world
         .apply(Command::WriteJournal {
             text: "A week on the road.".to_string(),
@@ -228,7 +235,7 @@ fn the_map_lists_every_place_the_roads_reach() {
     // Nearest first.
     assert_eq!(
         names[..4],
-        ["Hylvynhani Falls", "Sthepenhall", "Atzhaim", "Ayin'lil"]
+        ["Hylvynhani Falls", "Ayin'lil", "Yhlgrym", "Pheo"]
     );
 
     // The map draws no road to these, or only a road that joins nothing else.
@@ -236,7 +243,7 @@ fn the_map_lists_every_place_the_roads_reach() {
         .places
         .iter()
         .map(|p| p.name.as_str())
-        .filter(|name| *name != "Yhlgrym" && !names.contains(name))
+        .filter(|name| *name != "Sthepenhall" && !names.contains(name))
         .collect();
     assert_eq!(
         cut_off,
@@ -246,10 +253,10 @@ fn the_map_lists_every_place_the_roads_reach() {
 
     let atzhaim_id = world.find_place("atzhaim").unwrap();
     let atzhaim = routes.iter().find(|r| r.to == atzhaim_id).unwrap();
-    assert_eq!(atzhaim.leagues, 60);
-    assert_eq!(atzhaim.roads, 1);
-    assert_eq!(atzhaim.hours, 60, "sixty leagues is sixty hours");
-    assert_eq!(atzhaim.first_step, atzhaim_id);
+    assert_eq!(atzhaim.leagues, 102);
+    assert_eq!(atzhaim.roads, 3);
+    assert_eq!(atzhaim.hours, 102, "a hundred and two leagues is that many hours");
+    assert_eq!(atzhaim.first_step, world.find_place("falls").unwrap());
 }
 
 #[test]
@@ -321,7 +328,15 @@ fn a_short_road_is_one_order_of_its_leagues() {
     let mut world = first_leg();
     walk(
         &mut world,
-        &["atzhaim", "heedhaim", "atzch-midili", "bahour-ilos", "sima"],
+        &[
+            "falls",
+            "yhlgrym",
+            "atzhaim",
+            "heedhaim",
+            "atzch-midili",
+            "bahour-ilos",
+            "sima",
+        ],
     );
     let hila = world.find_place("hila").unwrap();
     let events = world.apply(Command::Travel { to: hila, hours: 6 }).unwrap();
@@ -341,8 +356,10 @@ fn a_short_road_is_one_order_of_its_leagues() {
 #[test]
 fn an_order_stops_after_its_hours_and_camp_does_not_walk() {
     let mut world = first_leg();
+    walk(&mut world, &["falls", "yhlgrym"]);
     let atzhaim = world.find_place("atzhaim").unwrap();
     let yhlgrym = world.party_at;
+    let hour_before = world.hour;
 
     let events = world
         .apply(Command::Travel {
@@ -362,7 +379,7 @@ fn an_order_stops_after_its_hours_and_camp_does_not_walk() {
     let journey = world.journey.expect("the canyon is not finished");
     assert_eq!((journey.leagues, journey.leagues_walked), (60, 8));
     assert_eq!(world.party_at, yhlgrym, "the party has not arrived yet");
-    assert_eq!(world.hour, 8);
+    assert_eq!(world.hour, (hour_before + 8) % 24);
 
     for person in world.people.iter_mut().filter(|person| person.in_party) {
         if let Some(sheet) = person.sheet.as_mut() {
@@ -372,7 +389,7 @@ fn an_order_stops_after_its_hours_and_camp_does_not_walk() {
     let events = world.apply(Command::MakeCamp).unwrap();
     assert!(matches!(events.as_slice(), [Event::CampedOnRoad { .. }]));
     assert!(world.camped);
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, (hour_before + 9) % 24);
     assert_eq!(party_fatigue(&world), [80, 80]);
     assert_eq!(world.journey.unwrap().leagues_walked, 8);
 
@@ -380,13 +397,13 @@ fn an_order_stops_after_its_hours_and_camp_does_not_walk() {
     let events = world.apply(Command::Rest).unwrap();
     assert!(matches!(events.first(), Some(Event::Rested { .. })));
     assert!(world.camped);
-    assert_eq!(world.hour, 17);
+    assert_eq!(world.hour, (hour_before + 17) % 24);
     assert_eq!(party_fatigue(&world), [85, 85]);
     assert_eq!(world.journey.unwrap().leagues_walked, 8);
 
     world.apply(Command::PackUp).unwrap();
     assert!(!world.camped);
-    assert_eq!(world.hour, 18);
+    assert_eq!(world.hour, (hour_before + 18) % 24);
     world
         .apply(Command::Travel {
             to: atzhaim,
@@ -406,7 +423,8 @@ fn party_fatigue(world: &World) -> Vec<u32> {
 #[test]
 fn the_canyon_is_sixty_hours_of_travel() {
     let mut world = first_leg();
-    let start = world.date;
+    walk(&mut world, &["falls", "yhlgrym"]);
+    let start_abs = world.absolute_hour();
     let atzhaim = world.find_place("atzhaim").unwrap();
     let mut traveled = 0;
     while world.party_at != atzhaim {
@@ -425,27 +443,26 @@ fn the_canyon_is_sixty_hours_of_travel() {
     }
     assert_eq!(traveled, 60);
     assert_eq!(world.journey, None);
-    assert_eq!(world.hour, 12);
-    assert_eq!(world.date.days_since(start), 2);
+    assert_eq!(world.absolute_hour(), start_abs + 60);
     assert_eq!(party_fatigue(&world), [100, 100]);
 }
 
 #[test]
 fn on_the_road_only_the_night_can_be_answered() {
     let mut world = first_leg();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = world.find_place("falls").unwrap();
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         })
         .unwrap();
     let before = world.clone();
 
-    let falls = world.find_place("falls").unwrap();
+    let ayin = world.find_place("ayin-lil").unwrap();
     assert_eq!(
         world.apply(Command::Travel {
-            to: falls,
+            to: ayin,
             hours: 8,
         }),
         Err(CommandError::OnTheRoad)
@@ -468,10 +485,10 @@ fn on_the_road_only_the_night_can_be_answered() {
     );
     assert_eq!(world, before, "a refused command must change nothing");
 
-    travel_to(&mut world, atzhaim);
+    travel_to(&mut world, falls);
     assert_eq!(
         world.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 0,
         }),
         Err(CommandError::NoHours)
@@ -481,10 +498,10 @@ fn on_the_road_only_the_night_can_be_answered() {
 #[test]
 fn a_world_saved_on_the_road_loads_back_on_the_road() {
     let mut world = first_leg();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = world.find_place("falls").unwrap();
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         })
         .unwrap();
@@ -496,11 +513,11 @@ fn a_world_saved_on_the_road_loads_back_on_the_road() {
     let mut b = loaded;
     assert_eq!(
         a.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         }),
         b.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         })
     );

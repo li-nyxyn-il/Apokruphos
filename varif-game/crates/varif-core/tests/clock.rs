@@ -11,6 +11,22 @@ fn first_leg() -> World {
     load_world(FIRST_LEG).expect("the first leg data should load")
 }
 
+/// A place on a direct road from the party's start in Sthepenhall.
+fn road_out(world: &World) -> varif_core::PlaceId {
+    world.find_place("falls").unwrap()
+}
+
+/// Leaves Sthepenhall onto the road, where a camp may be pitched.
+fn leave_town(world: &mut World) {
+    let to = road_out(world);
+    world
+        .apply(Command::Travel {
+            to,
+            hours: 1,
+        })
+        .unwrap();
+}
+
 fn fatigue(world: &World, key: &str) -> (u32, bool) {
     let sheet = world
         .people
@@ -48,19 +64,19 @@ fn the_clock_rolls_the_date_at_midnight() {
     let start = world.date;
     assert_eq!(world.hour, 0);
     world.hour = 22;
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = road_out(&world);
     // This order is about the date, so the road does not roll an encounter.
     // A wait that would pass one stops early in its own test.
     let here = world.party_at;
     for road in &mut world.roads {
-        if road.joins(here, atzhaim) {
+        if road.joins(here, falls) {
             road.encounter_chance = 0;
         }
     }
 
     let events = world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 4,
         })
         .unwrap();
@@ -77,6 +93,7 @@ fn the_clock_rolls_the_date_at_midnight() {
 #[test]
 fn camp_rest_and_pack_up_take_one_eight_and_one_hours() {
     let mut world = first_leg();
+    leave_town(&mut world);
     let start = world.date;
     let food = holding(&world, "pylgrym", ItemType::Food);
     let water = holding(&world, "pylgrym", ItemType::Water);
@@ -85,9 +102,9 @@ fn camp_rest_and_pack_up_take_one_eight_and_one_hours() {
     set_fatigue(&mut world, "donold", 80);
 
     let events = world.apply(Command::MakeCamp).unwrap();
-    assert!(matches!(events.as_slice(), [Event::Camped { .. }]));
+    assert!(matches!(events.as_slice(), [Event::CampedOnRoad { .. }]));
     assert!(world.camped);
-    assert_eq!(world.hour, 1);
+    assert_eq!(world.hour, 2);
     assert_eq!(world.date, start);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), food);
     assert_eq!(holding(&world, "pylgrym", ItemType::Water), water);
@@ -106,7 +123,7 @@ fn camp_rest_and_pack_up_take_one_eight_and_one_hours() {
         })
     ));
     assert!(world.camped);
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, 10);
     assert_eq!(world.date, start);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), food - 1);
     assert_eq!(holding(&world, "pylgrym", ItemType::Water), water - 1);
@@ -118,7 +135,7 @@ fn camp_rest_and_pack_up_take_one_eight_and_one_hours() {
     let events = world.apply(Command::PackUp).unwrap();
     assert!(matches!(events.as_slice(), [Event::PackedUp { .. }]));
     assert!(!world.camped);
-    assert_eq!(world.hour, 10);
+    assert_eq!(world.hour, 11);
     assert_eq!(world.date, start);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), food - 1);
     assert_eq!(fatigue(&world, "pylgrym"), (85, false));
@@ -127,11 +144,11 @@ fn camp_rest_and_pack_up_take_one_eight_and_one_hours() {
 #[test]
 fn one_hour_of_travel_is_one_league() {
     let mut world = first_leg();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = road_out(&world);
 
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 1,
         })
         .unwrap();
@@ -140,7 +157,7 @@ fn one_hour_of_travel_is_one_league() {
 
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         })
         .unwrap();
@@ -152,10 +169,10 @@ fn one_hour_of_travel_is_one_league() {
 
 #[test]
 fn extra_hours_cost_the_triangular_sum_once() {
-    let atzhaim_hours = |hours: u32| {
+    let road_hours = |hours: u32| {
         let mut world = first_leg();
-        let atzhaim = world.find_place("atzhaim").unwrap();
-        let events = world.apply(Command::Travel { to: atzhaim, hours }).unwrap();
+        let falls = road_out(&world);
+        let events = world.apply(Command::Travel { to: falls, hours }).unwrap();
         let traveled = events.iter().find_map(|event| match event {
             Event::Traveled {
                 leagues,
@@ -169,13 +186,13 @@ fn extra_hours_cost_the_triangular_sum_once() {
     };
 
     // Eight hours or fewer: no fatigue from this rule.
-    let (world, traveled) = atzhaim_hours(8);
+    let (world, traveled) = road_hours(8);
     assert_eq!(traveled.unwrap().0, 8);
     assert_eq!(fatigue(&world, "pylgrym"), (100, false));
     assert_eq!(fatigue(&world, "donold"), (100, false));
 
     // One extra hour costs 1, once.
-    let (world, traveled) = atzhaim_hours(9);
+    let (world, traveled) = road_hours(9);
     let (leagues, spent, after) = traveled.unwrap();
     assert_eq!((leagues, spent), (9, 9));
     assert_eq!(after.len(), 2);
@@ -184,7 +201,7 @@ fn extra_hours_cost_the_triangular_sum_once() {
     assert_eq!(fatigue(&world, "donold"), (99, false));
 
     // Three extra hours cost 1 + 2 + 3 = 6, once, not per league.
-    let (world, traveled) = atzhaim_hours(11);
+    let (world, traveled) = road_hours(11);
     let (leagues, _, after) = traveled.unwrap();
     assert_eq!(leagues, 11);
     assert!(after.iter().all(|entry| entry.fatigue == 94));
@@ -196,7 +213,7 @@ fn extra_hours_cost_the_triangular_sum_once() {
 #[test]
 fn a_travel_order_that_would_pass_zero_fatigue_is_refused() {
     let mut world = first_leg();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = road_out(&world);
     set_fatigue(&mut world, "pylgrym", 0);
     set_fatigue(&mut world, "donold", 100);
 
@@ -204,7 +221,7 @@ fn a_travel_order_that_would_pass_zero_fatigue_is_refused() {
     let before = world.clone();
     assert_eq!(
         world.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 9,
         }),
         Err(CommandError::TooTired)
@@ -217,7 +234,7 @@ fn a_travel_order_that_would_pass_zero_fatigue_is_refused() {
     let before = world.clone();
     assert_eq!(
         world.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 11,
         }),
         Err(CommandError::TooTired)
@@ -229,7 +246,7 @@ fn a_travel_order_that_would_pass_zero_fatigue_is_refused() {
     set_fatigue(&mut world, "donold", 0);
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         })
         .unwrap();
@@ -252,32 +269,35 @@ fn camp_rest_pack_travel_and_wait_move_the_same_clock() {
     assert_eq!((world.hour, world.minute), (0, 30));
 
     let food = holding(&world, "pylgrym", ItemType::Food);
-    world.apply(Command::MakeCamp).unwrap();
+    // Leave town onto the road first (one hour), then pitch camp.
+    leave_town(&mut world);
     assert_eq!((world.hour, world.minute), (1, 30));
+    world.apply(Command::MakeCamp).unwrap();
+    assert_eq!((world.hour, world.minute), (2, 30));
     assert!(world.camped);
 
     world.apply(Command::Rest).unwrap();
-    assert_eq!((world.hour, world.minute), (9, 30));
+    assert_eq!((world.hour, world.minute), (10, 30));
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), food - 1);
 
     world.apply(Command::PackUp).unwrap();
     assert!(!world.camped);
-    assert_eq!((world.hour, world.minute), (10, 30));
+    assert_eq!((world.hour, world.minute), (11, 30));
 
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = road_out(&world);
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 1,
         })
         .unwrap();
-    assert_eq!(world.journey.unwrap().leagues_walked, 1);
-    assert_eq!((world.hour, world.minute), (11, 30));
+    assert_eq!(world.journey.unwrap().leagues_walked, 2);
+    assert_eq!((world.hour, world.minute), (12, 30));
 
     world.apply(Command::Wait { hours: 1 }).unwrap();
-    assert_eq!(world.journey.unwrap().leagues_walked, 1);
-    assert_eq!((world.hour, world.minute), (12, 30));
-    assert_eq!(world.absolute_hour(), start + 12);
+    assert_eq!(world.journey.unwrap().leagues_walked, 2);
+    assert_eq!((world.hour, world.minute), (13, 30));
+    assert_eq!(world.absolute_hour(), start + 13);
 }
 
 #[test]
@@ -338,10 +358,10 @@ fn a_time_scale_outside_one_to_sixty_changes_nothing() {
 fn camp_and_step_ignore_the_time_scale() {
     let mut world = first_leg();
     world.apply(Command::SetTimeScale { scale: 60 }).unwrap();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = road_out(&world);
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 1,
         })
         .unwrap();
@@ -351,11 +371,12 @@ fn camp_and_step_ignore_the_time_scale() {
 
     let mut camped = first_leg();
     camped.apply(Command::SetTimeScale { scale: 60 }).unwrap();
+    leave_town(&mut camped);
     camped.apply(Command::MakeCamp).unwrap();
     assert!(camped.camped);
-    assert_eq!((camped.hour, camped.minute), (1, 0));
-    camped.apply(Command::Step).unwrap();
     assert_eq!((camped.hour, camped.minute), (2, 0));
+    camped.apply(Command::Step).unwrap();
+    assert_eq!((camped.hour, camped.minute), (3, 0));
 }
 
 #[test]
@@ -410,16 +431,16 @@ fn turn_based_mode_ignores_a_passive_elapsed_call() {
 #[test]
 fn a_wait_stops_early_at_a_road_encounter() {
     let mut world = first_leg();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = road_out(&world);
     let here = world.party_at;
     for road in &mut world.roads {
-        if road.joins(here, atzhaim) {
+        if road.joins(here, falls) {
             road.encounter_chance = 0;
         }
     }
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 1,
         })
         .unwrap();

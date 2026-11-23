@@ -10,6 +10,18 @@ fn first_leg() -> World {
     load_world(FIRST_LEG).expect("the first leg data should load")
 }
 
+/// Leaves Sthepenhall onto the road to the falls, where a camp may be pitched.
+fn leave_town(world: &mut World) {
+    let falls = world.find_place("falls").unwrap();
+    world
+        .apply(Command::Travel {
+            to: falls,
+            hours: 1,
+        })
+        .unwrap();
+    assert!(world.journey.is_some());
+}
+
 fn clear_packs(world: &mut World) {
     for person in &mut world.people {
         if let Some(sheet) = person.sheet.as_mut() {
@@ -70,13 +82,14 @@ fn supplies_are_spent_when_the_party_sleeps() {
     carry(&mut world, "pylgrym", ItemType::Food, 2);
     carry(&mut world, "donold", ItemType::Water, 1);
     carry(&mut world, "pylgrym", ItemType::Wood, 1);
+    leave_town(&mut world);
     let date = world.date;
 
     let events = world.apply(Command::MakeCamp).unwrap();
-    assert!(matches!(events.as_slice(), [Event::Camped { .. }]));
+    assert!(matches!(events.as_slice(), [Event::CampedOnRoad { .. }]));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 1);
+    assert_eq!(world.hour, 2);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), 2);
     assert_eq!(holding(&world, "donold", ItemType::Water), 1);
     assert_eq!(holding(&world, "pylgrym", ItemType::Wood), 1);
@@ -92,7 +105,7 @@ fn supplies_are_spent_when_the_party_sleeps() {
         })
     ));
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, 10);
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), 1);
     assert_eq!(holding(&world, "donold", ItemType::Water), 0);
     assert_eq!(holding(&world, "pylgrym", ItemType::Wood), 0);
@@ -148,10 +161,11 @@ fn each_missing_supply_applies_only_its_penalty() {
 }
 
 fn camp_missing(world: &mut World, spent_food: bool, spent_water: bool, spent_wood: bool) {
+    leave_town(world);
     let date = world.date;
     world.apply(Command::MakeCamp).unwrap();
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 1);
+    assert_eq!(world.hour, 2);
     assert_eq!(party_vitals(world), vec![(100, 100, 100), (100, 100, 100)]);
     let events = world.apply(Command::Rest).unwrap();
     assert!(matches!(
@@ -165,13 +179,14 @@ fn camp_missing(world: &mut World, spent_food: bool, spent_water: bool, spent_wo
     ));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, 10);
 }
 
 #[test]
 fn sleeping_still_succeeds_with_an_empty_pack() {
     let mut world = first_leg();
     clear_packs(&mut world);
+    leave_town(&mut world);
     let date = world.date;
     world.apply(Command::MakeCamp).unwrap();
     assert_eq!(party_vitals(&world), vec![(100, 100, 100), (100, 100, 100)]);
@@ -187,7 +202,7 @@ fn sleeping_still_succeeds_with_an_empty_pack() {
     ));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, 10);
     assert_eq!(party_vitals(&world), vec![(95, 95, 95), (95, 95, 95)]);
 }
 
@@ -197,6 +212,7 @@ fn a_second_night_in_the_same_camp_spends_supplies_again() {
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), 5);
     assert_eq!(holding(&world, "pylgrym", ItemType::Water), 5);
     assert_eq!(holding(&world, "pylgrym", ItemType::Wood), 5);
+    leave_town(&mut world);
     world.apply(Command::MakeCamp).unwrap();
     assert_eq!(holding(&world, "pylgrym", ItemType::Food), 5);
 
@@ -217,14 +233,7 @@ fn a_second_night_in_the_same_camp_spends_supplies_again() {
 #[test]
 fn the_party_cannot_camp_in_a_town() {
     let mut world = first_leg();
-    let falls = world.find_place("falls").unwrap();
-    world
-        .apply(Command::Travel {
-            to: falls,
-            hours: 15,
-        })
-        .unwrap();
-    assert_eq!(world.party_at, falls);
+    assert_eq!(world.place_name(world.party_at), "Sthepenhall");
     assert!(world.journey.is_none());
 
     let before = world.clone();
@@ -240,6 +249,7 @@ fn make_camp_does_not_sleep() {
     let mut world = first_leg();
     set_fatigue(&mut world, "pylgrym", 80, false);
     set_fatigue(&mut world, "donold", 80, false);
+    leave_town(&mut world);
     let date = world.date;
 
     let events = world.apply(Command::MakeCamp).unwrap();
@@ -248,7 +258,7 @@ fn make_camp_does_not_sleep() {
         .all(|event| !matches!(event, Event::DayPassed { .. } | Event::Rested { .. })));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 1);
+    assert_eq!(world.hour, 2);
     assert_eq!(party_vitals(&world), vec![(80, 100, 100), (80, 100, 100)]);
 }
 
@@ -258,6 +268,7 @@ fn sleeping_in_camp_restores_fatigue_like_a_road_camp() {
     // 47 with the road-rest debt stops at 50. 80 with no debt gains 5.
     set_fatigue(&mut world, "pylgrym", 47, true);
     set_fatigue(&mut world, "donold", 80, false);
+    leave_town(&mut world);
     let date = world.date;
     world.apply(Command::MakeCamp).unwrap();
 
@@ -274,7 +285,7 @@ fn sleeping_in_camp_restores_fatigue_like_a_road_camp() {
         .all(|event| !matches!(event, Event::DayPassed { .. })));
     assert!(world.camped);
     assert_eq!(world.date, date);
-    assert_eq!(world.hour, 9);
+    assert_eq!(world.hour, 10);
     // The starting food restores 10 health when the camp consumes it, and
     // never past 100. Donold carries none, so only the Pylgrym would gain,
     // and both are already at the health cap.
@@ -306,13 +317,14 @@ fn pack_up_is_refused_when_not_camped() {
 #[test]
 fn a_journey_cannot_continue_until_pack_up() {
     let mut world = first_leg();
+    leave_town(&mut world);
     world.apply(Command::MakeCamp).unwrap();
     let pitched = world.clone();
-    let atzhaim = world.find_place("atzhaim").unwrap();
+    let falls = world.find_place("falls").unwrap();
 
     assert_eq!(
         world.apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         }),
         Err(CommandError::StillCamped)
@@ -329,7 +341,7 @@ fn a_journey_cannot_continue_until_pack_up() {
 
     world
         .apply(Command::Travel {
-            to: atzhaim,
+            to: falls,
             hours: 8,
         })
         .unwrap();

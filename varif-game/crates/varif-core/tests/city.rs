@@ -43,37 +43,38 @@ fn standing_at(world: &World) -> Option<&str> {
 }
 
 #[test]
-fn the_party_starts_at_the_gate_of_yhlgrym() {
+fn the_party_starts_at_the_gate_of_sthepenhall() {
     let world = first_leg();
-    assert_eq!(standing_at(&world), Some("North Gate"));
+    assert_eq!(world.place_name(world.party_at), "Sthepenhall");
+    assert_eq!(standing_at(&world), Some("Gate"));
 }
 
 #[test]
-fn the_party_walks_to_the_krypt_and_back() {
+fn the_party_walks_to_the_palace_and_back() {
     let mut world = first_leg();
-    let yhlgrym = world.party_at;
-    let place = world.place(yhlgrym).unwrap();
-    let (gate, krypt) = (
+    let sthepenhall = world.party_at;
+    let place = world.place(sthepenhall).unwrap();
+    let (gate, palace) = (
         place.find_site("gate").unwrap(),
-        place.find_site("the krypt of grymsiere").unwrap(),
+        place.find_site("palace").unwrap(),
     );
     let date = world.date;
 
-    let events = world.apply(Command::Walk { to: krypt }).unwrap();
+    let events = world.apply(Command::Walk { to: palace }).unwrap();
     assert_eq!(
         events,
         [Event::Walked {
-            at: yhlgrym,
+            at: sthepenhall,
             from: Some(gate),
-            to: krypt,
+            to: palace,
             on: date
         }]
     );
-    assert_eq!(standing_at(&world), Some("Krypt of Grymsiere"));
+    assert_eq!(standing_at(&world), Some("Palace"));
     assert_eq!(world.date, date, "walking inside a city takes no time");
 
     world.apply(Command::Walk { to: gate }).unwrap();
-    assert_eq!(standing_at(&world), Some("North Gate"));
+    assert_eq!(standing_at(&world), Some("Gate"));
     assert_eq!(
         world.apply(Command::Walk { to: gate }),
         Err(CommandError::AlreadyThere)
@@ -114,7 +115,7 @@ fn leaving_a_city_leaves_its_sites_behind() {
     world
         .apply(Command::Travel {
             to: falls,
-            hours: 15,
+            hours: 1,
         })
         .unwrap();
     assert_eq!(world.party_site, None);
@@ -123,15 +124,15 @@ fn leaving_a_city_leaves_its_sites_behind() {
 #[test]
 fn where_the_party_stands_is_saved() {
     let mut world = first_leg();
-    let krypt = world
+    let inn = world
         .place(world.party_at)
         .unwrap()
-        .find_site("krypt")
+        .find_site("inn")
         .unwrap();
-    world.apply(Command::Walk { to: krypt }).unwrap();
+    world.apply(Command::Walk { to: inn }).unwrap();
     let loaded = World::from_ron(&world.to_ron().unwrap()).unwrap();
     assert_eq!(loaded, world);
-    assert_eq!(standing_at(&loaded), Some("Krypt of Grymsiere"));
+    assert_eq!(standing_at(&loaded), Some("Inn"));
 }
 
 #[test]
