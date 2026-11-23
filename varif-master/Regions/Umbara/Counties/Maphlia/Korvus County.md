@@ -13,6 +13,6 @@ A county of [[Khamperey]], in [[Maphlia]].
 
 ## Cities
 
-- [[Corvus]]
+- [[Korvus]]
 
 Related: [[Khamperey]]

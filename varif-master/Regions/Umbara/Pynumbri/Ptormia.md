@@ -5,7 +5,7 @@ tags: [region, umbara, pynumbra]
 
 # Ptormia
 
-A Pynumbra of the [[Umbara]]. Culturally it belongs to [[Vhinhelm|Vinhelm]].
+A Pynumbra of the [[Umbara]]. Culturally it belongs to [[Vinhelm]].
 
 ## Provinces and counties
 

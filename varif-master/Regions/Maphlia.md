@@ -24,17 +24,17 @@ A Pynumbra of the [[Umbara]]. Maphlia has cultural ties to [[Veryll]], in the Ap
 
 ### [[Floyde]]
 
-- [[Klate County]]: [[Klate]], [[Myvus]], [[Vienen]]
+- [[Klate County]]: [[Klate]], [[Myvus]], [[Vlenen]]
 - [[Rythen County]]
 - [[Ayn County]]
 
 ### [[Khamperey]]
 
-- [[Korvus County]]: [[Corvus]]
+- [[Korvus County]]: [[Korvus]]
 - [[Iden County]]: [[Iden]]
 - [[Seawalt County]]: [[Seawalt]]
 - [[Khamper County]]
-- [[Danon County]]: [[Danon]]
+- [[Dannon County]]: [[Dannon]]
 
 ## Cities
 
@@ -48,10 +48,10 @@ A Pynumbra of the [[Umbara]]. Maphlia has cultural ties to [[Veryll]], in the Ap
 - [[Hases]]
 - [[Klate]]
 - [[Myvus]]
-- [[Vienen]]
-- [[Corvus]]
+- [[Vlenen]]
+- [[Korvus]]
 - [[Iden]]
 - [[Seawalt]]
-- [[Danon]]
+- [[Dannon]]
 
 Related: [[Umbara]] · [[Aphlora]]

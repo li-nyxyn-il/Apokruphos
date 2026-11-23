@@ -21,10 +21,12 @@
 //! again when the next minute is due, and passes the seconds since the last
 //! frame into the one world clock.
 
+mod background;
 mod clock;
 mod layout;
 mod storage;
 
+use background::MapBackground;
 use eframe::egui;
 use layout::MapLayout;
 #[cfg(not(target_arch = "wasm32"))]
@@ -249,6 +251,10 @@ struct App {
     creator: Creator,
     world: World,
     layout: MapLayout,
+    /// The painted map under the places.
+    background: MapBackground,
+    /// How far the map is panned and zoomed.
+    view: MapView,
     /// The event log shown in the middle of the window.
     log: Vec<String>,
     /// The ways on offer to a place no road runs straight to, quickest
@@ -314,6 +320,8 @@ impl App {
             creator: Creator::from_player(&world),
             world,
             layout,
+            background: MapBackground::default(),
+            view: MapView::default(),
             log,
             ways: None,
             heading: Vec::new(),
@@ -819,7 +827,15 @@ impl App {
             ui.heading("Map");
             let height = (ui.available_height() * 0.6).max(240.0);
             ui.add_enabled_ui(!self.world_locked(), |ui| {
-                map(ui, &self.world, &self.layout, height, action);
+                map(
+                    ui,
+                    &self.world,
+                    &self.layout,
+                    &self.background,
+                    &mut self.view,
+                    height,
+                    action,
+                );
             });
             // Below the map, so that the map does not move when a question appears.
             self.ask(ui, action);
@@ -881,7 +897,15 @@ impl App {
                 let room_for_events = 24.0 * EVENTS_UNDER_MAP as f32 + 16.0;
                 let height = (ui.available_height() - room_for_events).max(200.0);
                 ui.add_enabled_ui(!self.world_locked(), |ui| {
-                    map(ui, &self.world, &self.layout, height, action);
+                    map(
+                        ui,
+                        &self.world,
+                        &self.layout,
+                        &self.background,
+                        &mut self.view,
+                        height,
+                        action,
+                    );
                 });
                 ui.separator();
                 let skip = self.log.len().saturating_sub(EVENTS_UNDER_MAP);
@@ -1430,16 +1454,21 @@ fn party_panel(
     }
 }
 
-/// A map of every place and road. Clicking a place goes there.
+/// A map of every place and road, drawn over the painted map of the Umbara.
+/// Clicking a place goes there.
 fn map(
     ui: &mut egui::Ui,
     world: &World,
     layout: &MapLayout,
+    background: &MapBackground,
+    view: &mut MapView,
     height: f32,
     action: &mut Option<Action>,
 ) {
     let size = egui::vec2(ui.available_width(), height);
-    let (response, painter) = ui.allocate_painter(size, egui::Sense::hover());
+    // The painter is clipped to this rectangle, so the picture can be drawn
+    // whole and only the part that fits shows. Dragging it pans the map.
+    let (response, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
     // Room around the edge for names. A narrow map gives up some of it.
     let margin_x = (response.rect.width() * 0.15).min(80.0);
     let area = response.rect.shrink2(egui::vec2(margin_x, 34.0));
@@ -1450,32 +1479,99 @@ fn map(
         26.0
     };
 
-    // Where every place sits, in the map image's pixels.
+    // Where every place sits, in the map picture's pixels.
     let spots = layout.positions(world);
     let Some((min, max)) = layout::bounds(&spots) else {
         return;
     };
 
-    // One scale for both directions, so that the map keeps its shape.
+    // One scale for both directions, so that the map keeps its shape. At
+    // zoom 1 the view is fitted to the places; the picture around them fills
+    // the rest. The player can pan and zoom from there.
     let span = egui::vec2((max.0 - min.0).max(1.0), (max.1 - min.1).max(1.0));
-    let scale = (area.width() / span.x).min(area.height() / span.y);
-    let middle = egui::vec2((min.0 + max.0) / 2.0, (min.1 + max.1) / 2.0);
-    let on_screen: Vec<egui::Pos2> = spots
-        .iter()
-        .map(|&(x, y)| area.center() + (egui::vec2(x, y) - middle) * scale)
-        .collect();
+    let fit = (area.width() / span.x).min(area.height() / span.y);
+    let places_middle = egui::vec2((min.0 + max.0) / 2.0, (min.1 + max.1) / 2.0);
+    // Zoomed all the way out, the whole picture fits in the map.
+    let whole = (response.rect.width() / background::MAP_SIZE.x)
+        .min(response.rect.height() / background::MAP_SIZE.y);
+    let min_zoom = (whole / fit).min(1.0);
+    view.zoom = view.zoom.clamp(min_zoom, MAX_ZOOM);
+    let mut middle = view.middle.unwrap_or(places_middle);
+
+    // Zoom about a point on the screen, keeping the map under it still.
+    let zoom_about = |zoom: &mut f32, middle: &mut egui::Vec2, factor: f32, at: egui::Pos2| {
+        let under = *middle + (at - area.center()) / (fit * *zoom);
+        *zoom = (*zoom * factor).clamp(min_zoom, MAX_ZOOM);
+        *middle = under - (at - area.center()) / (fit * *zoom);
+    };
+
+    // A mouse wheel or a pinch zooms about the pointer.
+    if let Some(pointer) = response.hover_pos() {
+        let (pinch, wheel) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta.y));
+        let factor = pinch * (wheel / 400.0).exp();
+        if (factor - 1.0).abs() > f32::EPSILON {
+            zoom_about(&mut view.zoom, &mut middle, factor, pointer);
+        }
+    }
+    if response.dragged() {
+        middle -= response.drag_delta() / (fit * view.zoom);
+    }
+
+    // Keep the middle of the view on the picture, so it cannot be lost.
+    middle = egui::vec2(
+        middle.x.clamp(0.0, background::MAP_SIZE.x),
+        middle.y.clamp(0.0, background::MAP_SIZE.y),
+    );
+    view.middle = Some(middle);
+    let scale = fit * view.zoom;
+    let to_screen = |x: f32, y: f32| area.center() + (egui::vec2(x, y) - middle) * scale;
+    let on_screen: Vec<egui::Pos2> = spots.iter().map(|&(x, y)| to_screen(x, y)).collect();
+
+    // The sea, then the painted map over it.
+    painter.rect_filled(response.rect, 0.0, background::SEA);
+    if let Some(texture) = background.texture(ui.ctx()) {
+        let picture = egui::Rect::from_min_max(
+            to_screen(0.0, 0.0),
+            to_screen(background::MAP_SIZE.x, background::MAP_SIZE.y),
+        );
+        painter.image(
+            texture.id(),
+            picture,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
 
     let text_colour = ui.visuals().text_color();
     let weak_colour = ui.visuals().weak_text_color();
     let here_colour = ui.visuals().selection.bg_fill;
-
-    for road in &world.roads {
-        let (a, b) = (on_screen[road.a.index()], on_screen[road.b.index()]);
-        painter.line_segment([a, b], egui::Stroke::new(2.0, weak_colour));
-    }
+    // Ink for the dots' rims, dark enough to read on the parchment.
+    let ink = egui::Color32::from_rgb(40, 36, 30);
+    // Behind each name, so it reads over the painted roads and rivers.
+    let label_back = ui.visuals().extreme_bg_color.gamma_multiply(0.8);
 
     let here = world.party_at;
     let routes = world.reachable(here);
+
+    // The painted map already shows its roads. Draw only the roads out of
+    // the party's place, to show where it can go in one leg, and any road
+    // to a place the map does not show (one added in play).
+    for road in &world.roads {
+        let touches_here = road.a == here || road.b == here;
+        let off_map = !layout.has(&world.places[road.a.index()].key)
+            || !layout.has(&world.places[road.b.index()].key);
+        if !(touches_here || off_map) {
+            continue;
+        }
+        let (a, b) = (on_screen[road.a.index()], on_screen[road.b.index()]);
+        let stroke = if touches_here {
+            egui::Stroke::new(3.0, here_colour.gamma_multiply(0.8))
+        } else {
+            egui::Stroke::new(2.0, ink.gamma_multiply(0.6))
+        };
+        painter.line_segment([a, b], stroke);
+    }
+
     let font = egui::FontId::proportional(13.0);
     // The space each place's dot takes up, which names must keep clear of.
     let dots: Vec<egui::Rect> = world
@@ -1495,8 +1591,15 @@ fn map(
         let route = routes.iter().find(|r| r.to == id);
         let radius = radius_of(place);
 
+        // A place panned out of view is not drawn, and cannot be clicked:
+        // its hit box would land on the panels around the map.
+        if !response.rect.contains(centre) {
+            continue;
+        }
+
         if let Some(route) = route {
-            let hit_box = egui::Rect::from_center_size(centre, egui::Vec2::splat(hit_size));
+            let hit_box = egui::Rect::from_center_size(centre, egui::Vec2::splat(hit_size))
+                .intersect(response.rect);
             let node = ui
                 .interact(
                     hit_box,
@@ -1520,9 +1623,9 @@ fn map(
             Some(_) => text_colour,
             None => weak_colour,
         };
-        painter.circle_filled(centre, radius, colour);
+        painter.circle(centre, radius, colour, egui::Stroke::new(1.5, ink));
         if is_here {
-            painter.circle_stroke(centre, radius + 4.0, egui::Stroke::new(2.0, here_colour));
+            painter.circle_stroke(centre, radius + 4.0, egui::Stroke::new(2.5, here_colour));
         }
 
         // Try the name below, above, right and left of the dot, and keep the
@@ -1553,6 +1656,7 @@ fn map(
                 covered(a).total_cmp(&covered(b))
             })
             .expect("there are four spots");
+        painter.rect_filled(best.expand2(egui::vec2(3.0, 1.0)), 3.0, label_back);
         painter.galley(best.min, galley, label_colour);
         names.push(best);
     }
@@ -1565,8 +1669,65 @@ fn map(
         );
         let part = journey.leagues_walked as f32 / journey.leagues.max(1) as f32;
         let party = from + (to - from) * part;
-        painter.circle_filled(party, 5.0, here_colour);
-        painter.circle_stroke(party, 9.0, egui::Stroke::new(2.0, here_colour));
+        painter.circle(party, 5.0, here_colour, egui::Stroke::new(1.5, ink));
+        painter.circle_stroke(party, 9.0, egui::Stroke::new(2.5, here_colour));
+    }
+    // Buttons for zooming without a wheel or a pinch, and for going back to
+    // the starting view, in the map's top-right corner. They are drawn last
+    // so that they sit over the map, and take effect on the next frame.
+    let side = if ui.ctx().input(|i| i.has_touch_screen()) {
+        40.0
+    } else {
+        26.0
+    };
+    let corner = response.rect.right_top() + egui::vec2(-6.0 - side, 6.0);
+    let buttons = [
+        ("+", "Zoom in"),
+        ("−", "Zoom out"),
+        ("⟲", "Show all the places"),
+    ];
+    for (row, (label, tip)) in buttons.into_iter().enumerate() {
+        let min = corner + egui::vec2(0.0, row as f32 * (side + 4.0));
+        let rect = egui::Rect::from_min_size(min, egui::Vec2::splat(side));
+        if ui
+            .put(rect, egui::Button::new(label))
+            .on_hover_text(tip)
+            .clicked()
+        {
+            let mut middle = view.middle.unwrap_or(places_middle);
+            match row {
+                0 => zoom_about(&mut view.zoom, &mut middle, 1.5, area.center()),
+                1 => zoom_about(&mut view.zoom, &mut middle, 1.0 / 1.5, area.center()),
+                _ => {
+                    view.zoom = 1.0;
+                    middle = places_middle;
+                }
+            }
+            view.middle = Some(middle);
+            ui.ctx().request_repaint();
+        }
+    }
+}
+
+/// How far in the map can be zoomed, as a multiple of the starting view.
+const MAX_ZOOM: f32 = 8.0;
+
+/// How the player has panned and zoomed the map. Not part of the world, so
+/// it is not saved.
+struct MapView {
+    /// 1 shows every place; more is closer in.
+    zoom: f32,
+    /// The point of the map picture, in its pixels, at the middle of the
+    /// view. `None` until the map is first drawn, then the places' middle.
+    middle: Option<egui::Vec2>,
+}
+
+impl Default for MapView {
+    fn default() -> MapView {
+        MapView {
+            zoom: 1.0,
+            middle: None,
+        }
     }
 }
 

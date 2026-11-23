@@ -4,6 +4,6 @@
 
 [[Yhlgrym]] and the [[Temple of Grymsiere]] are located at the southern end of the Great Atzch Road along the Yhlgori river in [[Yhl Water Gap]], the southernmost region of Atzchia, not far from [[Hylvynhani Falls]]. The Nedic focus of Yhlgrym is History, and [[Ecumenical Monology]]. 
 
-[[Atzch Lake Hall]] and the [[Temple of Phionyx]] are located on the southern tip of [[Lake Shentzlia]], the repository of the Shentlian watershed and source of the Yhlgori river. The [[Nedic Schools]] of Atzch Lake Hall are fertility and genealogy, and climatology. 
+[[Atzhaim|Atzch Lake Hall]] and the [[Temple of Phionyx]] are located on the southern tip of [[Lake Shentzlia]], the repository of the Shentlian watershed and source of the Yhlgori river. The [[Nedic Schools]] of Atzch Lake Hall are fertility and genealogy, and climatology. 
 
 [[varif-master/Regions/Cascadia]] and the [[Temple of Drake]] are located in the northwestern Shentzlian valley along the**

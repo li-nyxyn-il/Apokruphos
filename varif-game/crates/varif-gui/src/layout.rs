@@ -38,6 +38,12 @@ impl MapLayout {
         Ok(MapLayout { placed })
     }
 
+    /// True if the layout file gives this place a spot on the painted map.
+    /// The map already shows the roads between such places.
+    pub fn has(&self, key: &str) -> bool {
+        self.placed.contains_key(key)
+    }
+
     /// A position for every place in the world, in the order of its table.
     pub fn positions(&self, world: &World) -> Vec<(f32, f32)> {
         let mut spots: Vec<Option<(f32, f32)>> = world

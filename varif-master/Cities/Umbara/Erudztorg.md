@@ -14,4 +14,4 @@ aliases: ["Erudtzorg"]
 
 Older spellings: Erudtzorg. The map spelling is correct.
 
-Related: [[Umbara]] · [[Towns and Cities of Vhinhelm]]
+Related: [[Umbara]] · [[Towns and Cities of Vinhelm]]

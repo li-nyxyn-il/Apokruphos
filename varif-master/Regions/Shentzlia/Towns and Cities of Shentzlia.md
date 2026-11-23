@@ -1,7 +1,7 @@
 [[Hylvynhani Falls]]
 [[Hylhaim-Shentzli]]
 [[Heedhaim]]
-[[Atzch Lake Hall|Atzchaim Hall]]
+[[Atzhaim]]
 [[Atzchelm-Ivhaan]]
 [[Atzch-Midili]]
 [[Drazihaim Hylhelm]]

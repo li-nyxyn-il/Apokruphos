@@ -31,4 +31,4 @@ Aphlora is the six Pynumbri of the [[Umbara]] that share a broad Aphlian culture
 - [[Donnia]]: [[Myturhem]], [[Donwoud]]
 - [[Reimhurst]]: [[Lhokshe]], [[Reim]], [[Sekaentia]]
 
-Related: [[Umbara]] · [[Towns and Cities of Aphlora]] · [[Aphian]] · [[Diyk]] · [[Vhinhelm]]
+Related: [[Umbara]] · [[Towns and Cities of Aphlora]] · [[Aphian]] · [[Diyk]] · [[Vinhelm]]

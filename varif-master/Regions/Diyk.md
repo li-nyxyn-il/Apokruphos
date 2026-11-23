@@ -1,5 +1,5 @@
 [[Aphlora]]
-[[Vhinhelm]]
+[[Vinhelm]]
 
 
 [[Ecumency of the Ten Beyonds]]

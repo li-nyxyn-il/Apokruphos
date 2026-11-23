@@ -44,7 +44,8 @@ trunk serve --address 0.0.0.0    # http://localhost:8080, or this computer's add
 | `crates/varif-gui` | The window, built on egui (the `varif-gui` program) |
 | `crates/varif-gui/index.html` | The page the web build runs in |
 | `data/first_leg.ron` | The first leg of the Pylgrymage, Yhlgrym to Atzhaim, as data |
-| `data/map_layout.ron` | Where each place is drawn on the window's map |
+| `data/map_layout.ron` | Where each place is drawn on the window's map, in pixels of the Umbara map |
+| `data/umbara_roads_only.png` | The Umbara roads-only map, built into the window as the map's background |
 
 Inside `varif-core/src`:
 

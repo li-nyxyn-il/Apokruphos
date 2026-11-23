@@ -38,14 +38,14 @@ The front door to the Variff notes. Every note in the vault can be reached from 
 
 - [[Variff]]: the continents
 - [[Umbara]]: every Pynumbra, province and county of the Umbara, with their cities
-- [[Diyk]] · [[Atzchia]] · [[Aphlora]] · [[varif-master/Regions/Cascadia|Cascadia (region)]] · [[The Cascades]] · [[The Donwood]] · [[Kourzechi]] · [[Maphlia]] · [[Phorva]] · [[Reimhurst]] · [[Shentz]] · [[Shentzlia]] · [[Lake Shentzlia]] · [[Verdan]] · [[Veryll]] · [[Vhinhelm]] · [[Yhl Water Gap]]
-- Towns and cities by region: [[Towns and Cities of Aphlora]] · [[Towns and Cities of Maphlia]] · [[Towns and Cities of Shentzlia]] · [[Towns and Cities of Vhinhelm]] · [[Towns and Cities of Yhlmahni]]
+- [[Diyk]] · [[Atzchia]] · [[Aphlora]] · [[varif-master/Regions/Cascadia|Cascadia (region)]] · [[The Cascades]] · [[The Donwood]] · [[Kourzechi]] · [[Maphlia]] · [[Phorva]] · [[Reimhurst]] · [[Shentz]] · [[Shentzlia]] · [[Lake Shentzlia]] · [[Verdan]] · [[Veryll]] · [[Vinhelm]] · [[Yhl Water Gap]]
+- Towns and cities by region: [[Towns and Cities of Aphlora]] · [[Towns and Cities of Maphlia]] · [[Towns and Cities of Shentzlia]] · [[Towns and Cities of Vinhelm]] · [[Towns and Cities of Yhlmahni]]
 
 ## Cities
 
 - [[The City Temples]]: the temples of the cities
 - [[Bluestone]] · [[Hylvynhani Falls]] · [[Maphlamar]] · [[Seawalt 1]] · [[Yhlgrym]]
-- Along the Great Atzch Road: [[Aldyngrad]] · [[Atzch Lake Hall]] · [[Bastion]] · [[varif-master/Cities/Great Atzch Road/Cascadia|Cascadia (city)]] · [[Koratzch]] · [[Khazlyn]] · [[Ptorm]] · [[Yirhelm]]
+- Along the Great Atzch Road: [[Aldyngrad]] · [[Atzhaim]] · [[Bastion]] · [[varif-master/Cities/Great Atzch Road/Cascadia|Cascadia (city)]] · [[Koratzch]] · [[Khazlyn]] · [[Ptorm]] · [[Yirhelm]]
 
 ## People
 

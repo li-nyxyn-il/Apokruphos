@@ -12,7 +12,7 @@ A province of [[Shentzlia]], in the [[Umbara]].
 - [[Drazihaim County]]: [[Drazihaim Hylhelm]]
 - [[Shenvanne County]]: [[Bluestone]]
 - [[Atzhivhaan County]]: [[Atzchelm-Ivhaan]]
-- [[Atzhaim County]]: [[Atzch Lake Hall|Atzchaim Hall]]
+- [[Atzhaim County]]: [[Atzhaim]]
 - [[Atzhlys County]]
 
 Related: [[Shentzlia]]

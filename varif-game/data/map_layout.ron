@@ -1,58 +1,65 @@
 // Where each place sits on the map, for the window (varif-gui) to draw.
 // The rules of the world never read this file.
 //
-// Each entry is a place's key and its position on "Triadic-Atzchil
-// Region.png", in pixels from the top-left corner. The positions were
-// measured from the dots on the screenshot of the map at 200% and scaled
-// back to the image. A place with no entry here is drawn beside one of its
-// neighbours.
+// Each entry is a place's key and its position on "The_Umbara_City_Names.png"
+// (the same picture as "umbara_roads_only.png", the window's map background,
+// without the names), in pixels from the top-left corner of the full
+// 2770 x 2316 image. Each position is the centre of the place's dot, found
+// on the roads-only map and matched to its name on the City Names map.
+// A place with no entry here is drawn beside one of its neighbours.
 {
-    // ASSUMPTION: Yhlgrym is not drawn on the map. This puts it on the road
-    // between Sthepenhall and the falls.
-    "falls": (1031, 1041),
-    "yhlgrym": (1045, 1022),
-    "hylhaim": (1133, 976),
-    "heedhaim": (1191, 933),
-    "atzhaim": (1150, 938),
-    "atzch-midili": (1200, 872),
-    "coplahaim": (1263, 799),
-    "atzchhelm-ivhaan": (1083, 882),
-    "bluestone": (1088, 835),
-    "drazihaim": (1213, 794),
-    "khoratzh": (1254, 728),
-    "ulugrozt": (1143, 707),
-    "vhimyst": (1185, 675),
-    "trystzor": (1236, 653),
-    "vinniv-pti": (1244, 692),
-    "bahour-ilos": (1332, 881),
-    "sima": (1404, 892),
-    "hila": (1414, 891),
-    "idra": (1472, 872),
-    "ebyni": (1465, 933),
-    "allenia": (1395, 819),
-    "vormia": (1414, 786),
-    "porthelm": (1473, 834),
-    "stonesteps": (1498, 734),
-    "penhyla": (1535, 818),
-    "ebynshor": (1548, 891),
-    "lytzvia": (1450, 667),
-    "sthepenhall": (1005, 1074),
-    "pheo": (1099, 1084),
-    "edun": (1124, 1085),
-    "laad": (1145, 1077),
-    "hases": (1185, 1072),
-    "klate": (1220, 1065),
-    "myvus": (1253, 1063),
-    "vlenen": (1300, 1051),
-    "corvus": (1312, 1018),
-    "iden": (1350, 1034),
-    "maphlamar": (1327, 986),
-    "seawalt": (1403, 1040),
-    "danon": (1389, 1099),
-    "rhait": (1435, 973),
-    "ayin-lil": (981, 1111),
-    // Rough: Nihuloz is cut off at the bottom of the screenshot.
-    "nihuloz": (932, 1158),
-    "ayn-daiun": (1237, 1118),
-    "narhutz": (1329, 1140),
+    // ASSUMPTION: Yhlgrym has no name on the map. This puts it on the
+    // unnamed dot on the canyon road a little above the falls, which is
+    // about its 15 leagues from them.
+    "yhlgrym": (1226, 1161),
+    "falls": (1192, 1205),
+    "hylhaim": (1354, 1121),
+    "heedhaim": (1461, 1042),
+    // "Atzchaim Hall" on the map.
+    "atzhaim": (1386, 1054),
+    "atzch-midili": (1478, 930),
+    "coplahaim": (1594, 794),
+    "atzchhelm-ivhaan": (1261, 947),
+    "bluestone": (1271, 862),
+    // "Drazihaim Hylhelm" on the map.
+    "drazihaim": (1502, 786),
+    // "Koratzch" on the map.
+    "khoratzh": (1578, 662),
+    // Ulugrozt has no dot; this is the west end of its road, by the name.
+    "ulugrozt": (1372, 626),
+    "vhimyst": (1450, 565),
+    "trystzor": (1544, 525),
+    "vinniv-pti": (1558, 598),
+    "bahour-ilos": (1720, 945),
+    "sima": (1855, 967),
+    "hila": (1871, 963),
+    "idra": (1980, 929),
+    "ebyni": (1967, 1041),
+    "allenia": (1837, 831),
+    "vormia": (1873, 770),
+    "porthelm": (1982, 859),
+    "stonesteps": (2027, 675),
+    "penhyla": (2097, 830),
+    "ebynshor": (2120, 964),
+    "lytzvia": (1940, 550),
+    "sthepenhall": (1117, 1303),
+    "pheo": (1290, 1321),
+    "edun": (1337, 1324),
+    "laad": (1376, 1308),
+    "hases": (1450, 1299),
+    // "Clate" on the map.
+    "klate": (1514, 1287),
+    "myvus": (1574, 1282),
+    "vlenen": (1663, 1260),
+    "corvus": (1685, 1199),
+    "iden": (1754, 1228),
+    "maphlamar": (1713, 1140),
+    "seawalt": (1852, 1239),
+    "danon": (1827, 1349),
+    "rhait": (1912, 1116),
+    "ayin-lil": (1072, 1371),
+    "nihuloz": (963, 1467),
+    "ayn-daiun": (1546, 1384),
+    // Narhutz has no dot; this is the point on the coast road by its name.
+    "narhutz": (1690, 1415),
 }

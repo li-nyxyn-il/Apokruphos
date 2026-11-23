@@ -9,7 +9,7 @@ A province of [[Maphlia]], in the [[Umbara]].
 
 ## Counties
 
-- [[Klate County]]: [[Klate]], [[Myvus]], [[Vienen]]
+- [[Klate County]]: [[Klate]], [[Myvus]], [[Vlenen]]
 - [[Rythen County]]
 - [[Ayn County]]
 

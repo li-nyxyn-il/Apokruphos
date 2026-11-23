@@ -8,7 +8,7 @@ aliases: ["The Umbara", "Pynumbri"]
 
 The *Umbara* (umbra) is the old Yhlgori empire; its successor states are the *Pynumbri* (penumbra). This note lists every Pynumbra, its provinces and their counties, as drawn on the overlay maps in `Portraits of Variff/Maps/Umbara`. Each county note lists the map cities inside it, and each city note links back to its county, province and Pynumbra.
 
-Outside Aphlora, [[Shentzlia]] belongs to the [[Shentz]] culture and [[Ptormia]] and [[Hylwood]] to [[Vhinhelm|Vinhelm]].
+Outside Aphlora, [[Shentzlia]] belongs to the [[Shentz]] culture and [[Ptormia]] and [[Hylwood]] to [[Vinhelm]].
 
 [[Aphlora]] is [[Veryll]], [[Verdan]], [[Hale]] (the core) plus [[Kaskaedia]], [[Donnia]], [[Reimhurst]] (the periphery). [[Veryll]] also has cultural ties to [[Maphlia]].
 
@@ -50,7 +50,7 @@ Outside Aphlora, [[Shentzlia]] belongs to the [[Shentz]] culture and [[Ptormia]]
 - [[Phorva]]: [[Vyle County|Vyle]], [[Rhait County|Rhait]], [[Mpahlamar County|Mpahlamar]], [[Uvyla County|Uvyla]]
 - [[Ainaies]]: [[Sthepenhall County|Sthepenhall]], [[Hylhani County|Hylhani]], [[Pheo County|Pheo]]
 - [[Floyde]]: [[Klate County|Klate]], [[Rythen County|Rythen]], [[Ayn County|Ayn]]
-- [[Khamperey]]: [[Korvus County|Korvus]], [[Iden County|Iden]], [[Seawalt County|Seawalt]], [[Khamper County|Khamper]], [[Danon County|Danon]]
+- [[Khamperey]]: [[Korvus County|Korvus]], [[Iden County|Iden]], [[Seawalt County|Seawalt]], [[Khamper County|Khamper]], [[Dannon County|Dannon]]
 
 ## [[Shentzlia]] (Shentz)
 
@@ -77,9 +77,7 @@ No provinces or counties named on the map yet.
 
 ## Still open
 
-- **Corvus** (city) and **Korvus** (county), **Danon** / Dannon, **Vienen** / Vlenen: notes use the map spelling for now
-- Map **Atzchaim Hall** is filed under the existing [[Atzch Lake Hall]] note (alias Atzhaim)
-- [[Bluestone]] sits at Shentzlia's western edge on the map but is listed under Vhinhelm in [[Towns and Cities of Vhinhelm]]
+- [[Bluestone]] sits at Shentzlia's western edge on the map but is listed in [[Towns and Cities of Vinhelm]]
 - Not yet named: Kaskaedia's two provinces, the counties of Veras, Lhokshe, Reim and Sekaentia, and any divisions of Krysthishi
 
 ## Settled
@@ -88,6 +86,9 @@ No provinces or counties named on the map yet.
 - The map spelling is correct for Vingrotz, Vinhrest, Erudztorg and Drazihaim Hylhelm
 - **Ptorm** is the old Ptormvos city note, **Khazlyn** is Khalzyn and **Koratzch** is Choratzch; the map spellings are correct
 - The old Donwood region is now [[Donnia]]; [[The Donwood]] is the forest there
+- **Korvus** (city and county), **Dannon** (city and county) and **Vlenen**, not the map's Corvus, Danon and Vienen
+- **Atzhaim** is the city; Atzch Lake Hall and Atzchaim Hall are its other names
+- **Vinhelm** is the current spelling of Vhinhelm
 - Veras and Evre are Hylwood's provinces; Lhokshe, Reim and Sekaentia are Reimhurst's; Kaskaedia has two provinces; Krysthishi is the Pynumbra of the Krysthishi Isles
 
 Related: [[Variff]] · [[Yhlgori Empire]] · [[Aphlora]]

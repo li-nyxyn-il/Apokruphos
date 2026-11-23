@@ -13,6 +13,6 @@ A county of [[Haimlohk]], in [[Shentzlia]].
 
 ## Cities
 
-- [[Atzch Lake Hall|Atzchaim Hall]]
+- [[Atzhaim]]
 
 Related: [[Haimlohk]]
