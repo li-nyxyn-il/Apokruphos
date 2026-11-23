@@ -1,0 +1,13 @@
+[[Ulugrozt]]
+[[Vhimyst]]
+[[Trystzor]]
+[[Vinniv'pti]]
+[[Voleutz]]
+[[Ptorm]]
+[[Ptianhyliv]]
+[[Erudztorg]]
+[[Vinhrest]]
+[[Vingrotz]]
+[[Bluestone]]
+
+Jurisdictions (Pynumbra, province, county): [[Umbara]]

@@ -14,4 +14,4 @@ aliases: ["Ptormvos"]
 
 Older spellings: Ptormvos. The map spelling is correct.
 
-Related: [[Umbara]] · [[Towns and Cities of Vhinhelm]] · [[Great Atzch Road]]
+Related: [[Umbara]] · [[Towns and Cities of Vinhelm]] · [[Great Atzch Road]]

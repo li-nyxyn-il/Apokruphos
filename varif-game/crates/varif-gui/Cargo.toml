@@ -8,6 +8,8 @@ description = "A simple desktop window for the Varif world model, built on egui.
 varif-core = { path = "../varif-core" }
 eframe = "0.37"
 ron.workspace = true
+# Decodes the map picture drawn under the places (see src/background.rs).
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Only for the web build (see index.html and the README).
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -11,4 +11,4 @@ tags: [city, umbara]
 |---|---|---|
 | [[Ptormia]] | [[Ptian]] | [[Atzptian County]] |
 
-Related: [[Umbara]] · [[Towns and Cities of Vhinhelm]]
+Related: [[Umbara]] · [[Towns and Cities of Vinhelm]]

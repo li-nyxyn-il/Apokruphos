@@ -14,4 +14,4 @@ aliases: ["Vhingrotz"]
 
 Older spellings: Vhingrotz. The map spelling is correct.
 
-Related: [[Umbara]] · [[Towns and Cities of Vhinhelm]]
+Related: [[Umbara]] · [[Towns and Cities of Vinhelm]]

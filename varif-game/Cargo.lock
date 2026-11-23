@@ -3388,6 +3388,7 @@ name = "varif-gui"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "image",
  "ron",
  "varif-core",
  "wasm-bindgen-futures",

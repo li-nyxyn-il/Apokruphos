@@ -14,7 +14,7 @@ A Pynumbra of the [[Umbara]]. Culturally it belongs to [[Shentz]].
 - [[Drazihaim County]]: [[Drazihaim Hylhelm]]
 - [[Shenvanne County]]: [[Bluestone]]
 - [[Atzhivhaan County]]: [[Atzchelm-Ivhaan]]
-- [[Atzhaim County]]: [[Atzch Lake Hall|Atzchaim Hall]]
+- [[Atzhaim County]]: [[Atzhaim]]
 - [[Atzhlys County]]
 
 ### [[Midias]]
@@ -34,7 +34,7 @@ A Pynumbra of the [[Umbara]]. Culturally it belongs to [[Shentz]].
 - [[Drazihaim Hylhelm]]
 - [[Bluestone]]
 - [[Atzchelm-Ivhaan]]
-- [[Atzch Lake Hall|Atzchaim Hall]]
+- [[Atzhaim]]
 - [[Koratzch]]
 - [[Coplahaim]]
 - [[Atzch-Midili]]

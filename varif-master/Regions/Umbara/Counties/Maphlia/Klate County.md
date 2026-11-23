@@ -15,6 +15,6 @@ A county of [[Floyde]], in [[Maphlia]].
 
 - [[Klate]]
 - [[Myvus]]
-- [[Vienen]]
+- [[Vlenen]]
 
 Related: [[Floyde]]

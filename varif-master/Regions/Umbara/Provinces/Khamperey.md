@@ -9,10 +9,10 @@ A province of [[Maphlia]], in the [[Umbara]].
 
 ## Counties
 
-- [[Korvus County]]: [[Corvus]]
+- [[Korvus County]]: [[Korvus]]
 - [[Iden County]]: [[Iden]]
 - [[Seawalt County]]: [[Seawalt]]
 - [[Khamper County]]
-- [[Danon County]]: [[Danon]]
+- [[Dannon County]]: [[Dannon]]
 
 Related: [[Maphlia]]
