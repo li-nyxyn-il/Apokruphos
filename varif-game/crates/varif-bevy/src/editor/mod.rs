@@ -7,8 +7,11 @@
 //! a module, and a line in [`tab_ui`].
 
 mod factions;
+mod inventory;
+mod location;
 mod logic;
 mod sheet;
+mod widgets;
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
@@ -619,8 +622,10 @@ fn central_panel(ui: &mut egui::Ui, state: &mut EditorState, context: &EditorCon
 fn tab_ui(tab: Tab, ui: &mut egui::Ui, file: &mut PersonFile, context: &EditorContext) {
     match tab {
         Tab::Sheet => sheet::ui(ui, file, context),
+        Tab::Inventory => inventory::ui(ui, file, context),
+        Tab::Location => location::ui(ui, file, context),
         Tab::Factions => factions::ui(ui, file, context),
-        Tab::Inventory | Tab::Location | Tab::Sprites | Tab::Dialogue => {
+        Tab::Sprites | Tab::Dialogue => {
             ui.label("Coming in a later task");
         }
     }
@@ -634,13 +639,7 @@ pub fn combo<T: Copy + PartialEq>(
     all: &[T],
     name: fn(T) -> &'static str,
 ) {
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(name(*value))
-        .show_ui(ui, |ui| {
-            for &option in all {
-                ui.selectable_value(value, option, name(option));
-            }
-        });
+    widgets::enum_combo(ui, id, value, all, name);
 }
 
 #[cfg(test)]
