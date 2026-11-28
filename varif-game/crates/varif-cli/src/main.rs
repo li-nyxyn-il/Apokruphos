@@ -4,11 +4,12 @@
 //! `cargo run -- data/first_leg.ron`.
 
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::time::Instant;
 use std::{env, fs, process};
 use varif_core::{
-    game_minutes, load_world, AdvanceKind, Command, EquipSlot, Event, Itinerary, MemberFatigue,
-    PersonId, Place, PlaceId, TimeMode, World, MAX_TIME_SCALE, MIN_TIME_SCALE,
+    game_minutes, load_world_with_people, AdvanceKind, Command, EquipSlot, Event, Itinerary,
+    MemberFatigue, PersonId, Place, PlaceId, TimeMode, World, MAX_TIME_SCALE, MIN_TIME_SCALE,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -81,7 +82,14 @@ fn main() {
             process::exit(1);
         }
     };
-    let mut world = match load_world(&text) {
+    let people = match varif_core::read_people_dir(&Path::new(&path).with_file_name("people")) {
+        Ok(people) => people,
+        Err(error) => {
+            eprintln!("Could not read the people files beside {path}: {error}");
+            process::exit(1);
+        }
+    };
+    let mut world = match load_world_with_people(&text, &people) {
         Ok(world) => world,
         Err(error) => {
             eprintln!("Could not load {path}: {error}");

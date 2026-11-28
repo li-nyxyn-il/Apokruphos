@@ -4,8 +4,8 @@
 //! `cargo bevy -- data/first_leg.ron`.
 
 use bevy::prelude::*;
-use std::{env, fs, process};
-use varif_core::{load_world, World as VarifWorld};
+use std::{env, fs, path::Path, process};
+use varif_core::{load_world_with_people, World as VarifWorld};
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
 
@@ -25,7 +25,14 @@ fn main() {
             process::exit(1);
         }
     };
-    let world = match load_world(&text) {
+    let people = match varif_core::read_people_dir(&Path::new(&path).with_file_name("people")) {
+        Ok(people) => people,
+        Err(error) => {
+            eprintln!("Could not read the people files beside {path}: {error}");
+            process::exit(1);
+        }
+    };
+    let world = match load_world_with_people(&text, &people) {
         Ok(world) => world,
         Err(error) => {
             eprintln!("Could not load {path}: {error}");

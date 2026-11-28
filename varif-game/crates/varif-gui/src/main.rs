@@ -32,10 +32,10 @@ use layout::MapLayout;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs, path::Path, process};
 use varif_core::{
-    load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
-    MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
-    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_TIME_SCALE, MIN_AGE,
-    MIN_TIME_SCALE,
+    load_world_with_people, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage,
+    Itinerary, MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue,
+    World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_TIME_SCALE,
+    MIN_AGE, MIN_TIME_SCALE,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -94,13 +94,20 @@ fn main() {
 
     const WEB_DATA: &str = include_str!("../../../data/first_leg.ron");
     const WEB_LAYOUT: &str = include_str!("../../../data/map_layout.ron");
+    // The people files in data/people, embedded by build.rs.
+    include!(concat!(env!("OUT_DIR"), "/people.rs"));
 
     // Panics show up in the browser's console instead of vanishing.
     std::panic::set_hook(Box::new(|info| {
         eframe::web_sys::console::error_1(&info.to_string().into());
     }));
 
-    let world = load_world(WEB_DATA).expect("the built-in data file should load");
+    let people: Vec<(String, String)> = PEOPLE
+        .iter()
+        .map(|(key, text)| (key.to_string(), text.to_string()))
+        .collect();
+    let world = load_world_with_people(WEB_DATA, &people)
+        .expect("the built-in data file and people files should load");
     let (layout, layout_note) = match MapLayout::from_text(WEB_LAYOUT) {
         Ok(layout) => (layout, None),
         Err(error) => (
@@ -153,7 +160,9 @@ fn main() {
 #[cfg(not(target_arch = "wasm32"))]
 fn read_data(path: &str) -> Result<World, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    load_world(&text).map_err(|e| e.to_string())
+    let people = varif_core::read_people_dir(&Path::new(path).with_file_name("people"))
+        .map_err(|e| format!("could not read the people files beside {path}: {e}"))?;
+    load_world_with_people(&text, &people).map_err(|e| e.to_string())
 }
 
 /// Something a click asks for. Drawing only collects one of these; it is

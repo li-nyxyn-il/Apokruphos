@@ -7,7 +7,7 @@ use crate::calendar::{Date, HOURS_PER_DAY};
 use crate::character::{Character, SheetError};
 use crate::dialogue::{Action, Condition, DialogueTree, Sprite};
 use crate::faction::Hostility;
-use crate::ids::PlaceId;
+use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::DialogueLine;
 use crate::rng::Rng;
 use crate::schedule::{RoadLeg, Schedule, Span, Whereabouts};
@@ -16,6 +16,7 @@ use crate::world::{Person, Place, Road, SiteKind, TimeMode, World};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 struct WorldData {
@@ -203,6 +204,19 @@ pub enum DataError {
         person: String,
         sprite: String,
     },
+    /// A people file could not be loaded. `file` is its name without
+    /// `.ron`, and `error` is what was wrong inside it.
+    PeopleFile {
+        file: String,
+        error: Box<DataError>,
+    },
+    /// A people file's name is not the key of the person inside it.
+    FileKeyMismatch {
+        file: String,
+        key: String,
+    },
+    /// The person has no character sheet, so there is no one to talk to.
+    NoSheet(String),
 }
 
 impl fmt::Display for DataError {
@@ -263,6 +277,16 @@ impl fmt::Display for DataError {
             DataError::DuplicateSprite { person, sprite } => {
                 write!(f, "{person} has two sprites named \"{sprite}\"")
             }
+            DataError::PeopleFile { file, error } => {
+                write!(f, "the people file \"{file}.ron\": {error}")
+            }
+            DataError::FileKeyMismatch { file, key } => {
+                write!(
+                    f,
+                    "the people file \"{file}.ron\" holds the person \"{key}\"; the file must be named \"{key}.ron\""
+                )
+            }
+            DataError::NoSheet(key) => write!(f, "{key} has no character sheet"),
         }
     }
 }
@@ -271,8 +295,44 @@ impl std::error::Error for DataError {}
 
 /// Builds a [`World`] from the text of a data file.
 pub fn load_world(text: &str) -> Result<World, DataError> {
-    let data: WorldData = ron::from_str(text).map_err(|e| DataError::Parse(e.to_string()))?;
+    load_world_with_people(text, &[])
+}
 
+/// Builds a [`World`] from the text of a data file and any people files.
+/// Each pair is a file name without `.ron` and the text of the file, which
+/// holds one [`PersonFile`]. A people file replaces the person with the same
+/// key in the main file, keeping their place in the table; a new key is
+/// added at the end. A file whose name is not its key, or two files with one
+/// key, are refused.
+pub fn load_world_with_people(text: &str, people: &[(String, String)]) -> Result<World, DataError> {
+    let mut data: WorldData = ron::from_str(text).map_err(|e| DataError::Parse(e.to_string()))?;
+    let mut from_files: BTreeSet<String> = BTreeSet::new();
+    for (file, file_text) in people {
+        let person: PersonFile = ron::from_str(file_text).map_err(|e| DataError::PeopleFile {
+            file: file.clone(),
+            error: Box::new(DataError::Parse(e.to_string())),
+        })?;
+        if &person.key != file {
+            return Err(DataError::FileKeyMismatch {
+                file: file.clone(),
+                key: person.key,
+            });
+        }
+        if !from_files.insert(person.key.clone()) {
+            return Err(DataError::DuplicatePerson(person.key));
+        }
+        match data.people.iter().position(|p| p.key == person.key) {
+            Some(index) => data.people[index] = person,
+            None => data.people.push(person),
+        }
+    }
+    build_world(data, &from_files)
+}
+
+/// Checks the parsed data and turns it into a [`World`]. `from_files` holds
+/// the keys of the people who came from people files, so that a problem with
+/// one of them names the file.
+fn build_world(data: WorldData, from_files: &BTreeSet<String>) -> Result<World, DataError> {
     // A BTreeMap keeps its keys in order, so nothing here depends on the
     // arbitrary ordering a HashMap would have.
     let mut place_ids: BTreeMap<String, PlaceId> = BTreeMap::new();
@@ -352,12 +412,8 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         });
     }
 
-    let mut people: Vec<Person> = Vec::new();
     let mut seen_player = false;
-    for mut person in data.people {
-        if people.iter().any(|p| p.key == person.key) {
-            return Err(DataError::DuplicatePerson(person.key));
-        }
+    let mut build = |mut person: PersonFile| -> Result<Person, DataError> {
         // People in the party start wherever the party starts.
         let at = if person.in_party {
             party_at
@@ -413,7 +469,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
                 problem,
             })?;
         }
-        people.push(Person {
+        Ok(Person {
             key: person.key,
             name: person.name,
             title: person.title,
@@ -426,7 +482,26 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             schedule,
             tree: person.tree,
             sprites: person.sprites,
+        })
+    };
+
+    let mut people: Vec<Person> = Vec::new();
+    for person in data.people {
+        if people.iter().any(|p| p.key == person.key) {
+            return Err(DataError::DuplicatePerson(person.key));
+        }
+        let key = person.key.clone();
+        let built = build(person).map_err(|error| {
+            if from_files.contains(&key) {
+                DataError::PeopleFile {
+                    file: key,
+                    error: Box::new(error),
+                }
+            } else {
+                error
+            }
         });
+        people.push(built?);
     }
 
     Ok(World {
@@ -603,4 +678,98 @@ pub fn unreachable_nodes(tree: &DialogueTree) -> Vec<String> {
         .filter(|n| !reached.contains(n.key.as_str()))
         .map(|n| n.key.clone())
         .collect()
+}
+
+/// Reads every `*.ron` file in `dir` as a people file: the file name without
+/// `.ron` and the text, sorted by name. A folder that is not there gives an
+/// empty list, since people files are optional.
+pub fn read_people_dir(dir: &Path) -> std::io::Result<Vec<(String, String)>> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("ron") || !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        files.push((name.to_string(), std::fs::read_to_string(&path)?));
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// The text of a people file for one person, in pretty RON.
+pub fn person_file_text(file: &PersonFile) -> String {
+    ron::ser::to_string_pretty(file, ron::ser::PrettyConfig::default())
+        .expect("a person file is plain data and always serialises")
+}
+
+/// Turns a person in a loaded world back into the key-based shape a data
+/// file writes, so the editor can open anyone from the main file.
+pub fn person_file_of(world: &World, id: PersonId) -> PersonFile {
+    let person = &world.people[id.index()];
+    let place_key = |place: PlaceId| world.places[place.index()].key.clone();
+    let site_key =
+        |place: PlaceId, site: SiteId| world.places[place.index()].sites[site.index()].key.clone();
+    let spans = person
+        .schedule
+        .spans
+        .iter()
+        .map(|span| {
+            let at = &span.whereabouts;
+            SpanData {
+                hours: span.hours,
+                place: place_key(at.place),
+                site: at.site.map(|site| site_key(at.place, site)),
+                road_from: at.on_the_road.map(|leg| place_key(leg.from)),
+                road_to: at.on_the_road.map(|leg| place_key(leg.to)),
+            }
+        })
+        .collect();
+    PersonFile {
+        key: person.key.clone(),
+        name: person.name.clone(),
+        title: person.title.clone(),
+        at: place_key(person.at),
+        site: person.site.map(|site| site_key(person.at, site)),
+        in_party: person.in_party,
+        recruitable: person.recruitable,
+        sheet: person.sheet.clone(),
+        dialogue: person.dialogue.clone(),
+        schedule: ScheduleData { spans },
+        tree: person.tree.clone(),
+        sprites: person.sprites.clone(),
+    }
+}
+
+/// The people files with `file` in place of any of the same key, or added
+/// when none has it. The editor tests a person in the world that would
+/// result from saving them.
+pub(crate) fn with_person_file(
+    people: &[(String, String)],
+    file: &PersonFile,
+) -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = people
+        .iter()
+        .filter(|(name, _)| name != &file.key)
+        .cloned()
+        .collect();
+    all.push((file.key.clone(), person_file_text(file)));
+    all
+}
+
+/// Loads the main file with `file` saved as a people file, and reports what
+/// is wrong. This is the editor's gate before it writes a file.
+pub fn check_person_file(
+    main: &str,
+    people: &[(String, String)],
+    file: &PersonFile,
+) -> Result<(), DataError> {
+    load_world_with_people(main, &with_person_file(people, file)).map(|_| ())
 }
