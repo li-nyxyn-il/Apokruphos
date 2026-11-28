@@ -33,7 +33,10 @@ pub use command::{
     Command, CommandError, Event, MemberFatigue, MAKE_CAMP_HOURS, MAX_TIME_SCALE, MIN_TIME_SCALE,
     PACK_UP_HOURS, REST_HOURS, UNTIRED_HOURS,
 };
-pub use data::{load_world, DataError};
+pub use data::{
+    check_tree, load_world, unreachable_nodes, DataError, PersonFile, ScheduleData, SpanData,
+    TreeProblem,
+};
 pub use dialogue::{Action, Choice, Compare, Condition, DialogueTree, Entry, Frame, Node, Sprite};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};

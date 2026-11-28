@@ -5,6 +5,7 @@
 
 use crate::calendar::{Date, HOURS_PER_DAY};
 use crate::character::{Character, SheetError};
+use crate::dialogue::{Action, Condition, DialogueTree, Sprite};
 use crate::faction::Hostility;
 use crate::ids::PlaceId;
 use crate::npc::DialogueLine;
@@ -12,7 +13,7 @@ use crate::rng::Rng;
 use crate::schedule::{RoadLeg, Schedule, Span, Whereabouts};
 use crate::sky::Sky;
 use crate::world::{Person, Place, Road, SiteKind, TimeMode, World};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -23,7 +24,7 @@ struct WorldData {
     #[serde(default)]
     roads: Vec<RoadData>,
     #[serde(default)]
-    people: Vec<PersonData>,
+    people: Vec<PersonFile>,
     #[serde(default)]
     dialogue: Vec<DialogueLine>,
 }
@@ -49,45 +50,88 @@ struct RoadData {
     encounter_chance: u32,
 }
 
-#[derive(Debug, Deserialize)]
-struct PersonData {
-    key: String,
-    name: String,
-    title: String,
-    at: String,
+/// One person as a data file writes them, with places and sites named by
+/// key. This is the type an editor reads and writes.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PersonFile {
+    pub key: String,
+    pub name: String,
+    pub title: String,
+    pub at: String,
     /// The key of a site inside `at`, when that place has sites.
     #[serde(default)]
-    site: Option<String>,
+    pub site: Option<String>,
     #[serde(default)]
-    in_party: bool,
+    pub in_party: bool,
     #[serde(default)]
-    recruitable: bool,
+    pub recruitable: bool,
     #[serde(default)]
-    sheet: Option<Character>,
+    pub sheet: Option<Character>,
     #[serde(default)]
-    dialogue: Vec<DialogueLine>,
+    pub dialogue: Vec<DialogueLine>,
     #[serde(default)]
-    schedule: ScheduleData,
+    pub schedule: ScheduleData,
+    /// A scripted conversation, used in place of `dialogue`.
+    #[serde(default)]
+    pub tree: Option<DialogueTree>,
+    /// The pictures the tree may show.
+    #[serde(default)]
+    pub sprites: Vec<Sprite>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct ScheduleData {
+/// A schedule as a data file writes it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScheduleData {
     #[serde(default)]
-    spans: Vec<SpanData>,
+    pub spans: Vec<SpanData>,
 }
 
-#[derive(Debug, Deserialize)]
-struct SpanData {
-    hours: u32,
-    place: String,
+/// One span of a schedule as a data file writes it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpanData {
+    pub hours: u32,
+    pub place: String,
     #[serde(default)]
-    site: Option<String>,
+    pub site: Option<String>,
     /// The place key the NPC is walking from, when the span is travel.
     #[serde(default)]
-    road_from: Option<String>,
+    pub road_from: Option<String>,
     /// The place key the NPC is walking toward, when the span is travel.
     #[serde(default)]
-    road_to: Option<String>,
+    pub road_to: Option<String>,
+}
+
+/// What is wrong with a dialogue tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TreeProblem {
+    /// The tree has no entry, so no conversation could open.
+    NoEntries,
+    /// Two nodes share this key.
+    DuplicateNode(String),
+    /// An entry or a choice leads to a node that is not there.
+    MissingNode(String),
+    /// An hour that is not from 0 to 23.
+    BadHour(u32),
+    /// `PartyAtSite` names a site the person's place does not have.
+    UnknownSite(String),
+    /// A flag with no name.
+    BlankFlag,
+    /// A node shows a sprite the person does not have.
+    UnknownSprite(String),
+}
+
+impl fmt::Display for TreeProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TreeProblem::NoEntries => write!(f, "the tree has no entry"),
+            TreeProblem::DuplicateNode(key) => write!(f, "two nodes share the key \"{key}\""),
+            TreeProblem::MissingNode(key) => write!(f, "nothing is called \"{key}\" in the tree"),
+            TreeProblem::BadHour(hour) => write!(f, "the hour {hour} is not from 0 to 23"),
+            TreeProblem::UnknownSite(key) => write!(f, "the place has no site \"{key}\""),
+            TreeProblem::BlankFlag => write!(f, "a flag has no name"),
+            TreeProblem::UnknownSprite(name) => write!(f, "there is no sprite \"{name}\""),
+        }
+    }
 }
 
 /// What is wrong with a data file.
@@ -149,6 +193,16 @@ pub enum DataError {
     RoadNeedsTwoEnds {
         person: String,
     },
+    /// A person's dialogue tree is not sound.
+    BadTree {
+        person: String,
+        problem: TreeProblem,
+    },
+    /// Two of a person's sprites share a name.
+    DuplicateSprite {
+        person: String,
+        sprite: String,
+    },
 }
 
 impl fmt::Display for DataError {
@@ -202,6 +256,12 @@ impl fmt::Display for DataError {
                     f,
                     "a travel span in {person}'s schedule names one end of the road and not the other"
                 )
+            }
+            DataError::BadTree { person, problem } => {
+                write!(f, "{person}'s dialogue tree is not valid: {problem}")
+            }
+            DataError::DuplicateSprite { person, sprite } => {
+                write!(f, "{person} has two sprites named \"{sprite}\"")
             }
         }
     }
@@ -338,6 +398,21 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             }
             None => None,
         };
+        for (i, sprite) in person.sprites.iter().enumerate() {
+            if person.sprites[..i].iter().any(|s| s.name == sprite.name) {
+                return Err(DataError::DuplicateSprite {
+                    person: person.key.clone(),
+                    sprite: sprite.name.clone(),
+                });
+            }
+        }
+        if let Some(tree) = &person.tree {
+            let sites: Vec<String> = place.sites.iter().map(|s| s.key.clone()).collect();
+            check_tree(tree, &person.sprites, &sites).map_err(|problem| DataError::BadTree {
+                person: person.key.clone(),
+                problem,
+            })?;
+        }
         people.push(Person {
             key: person.key,
             name: person.name,
@@ -349,8 +424,8 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             dialogue: person.dialogue,
             site,
             schedule,
-            tree: None,
-            sprites: Vec::new(),
+            tree: person.tree,
+            sprites: person.sprites,
         });
     }
 
@@ -432,4 +507,100 @@ fn load_schedule(
         });
     }
     Ok(Schedule { spans })
+}
+
+/// Checks a dialogue tree and reports the first problem found. `sprites` are
+/// the person's pictures and `place_sites` the keys of the sites in their
+/// place.
+pub fn check_tree(
+    tree: &DialogueTree,
+    sprites: &[Sprite],
+    place_sites: &[String],
+) -> Result<(), TreeProblem> {
+    if tree.entries.is_empty() {
+        return Err(TreeProblem::NoEntries);
+    }
+    for (i, node) in tree.nodes.iter().enumerate() {
+        if tree.nodes[..i].iter().any(|n| n.key == node.key) {
+            return Err(TreeProblem::DuplicateNode(node.key.clone()));
+        }
+    }
+    let leads_to = tree.entries.iter().map(|e| Some(&e.node)).chain(
+        tree.nodes
+            .iter()
+            .flat_map(|n| n.choices.iter().map(|c| c.next.as_ref())),
+    );
+    for target in leads_to.flatten() {
+        if tree.node(target).is_none() {
+            return Err(TreeProblem::MissingNode(target.clone()));
+        }
+    }
+    for entry in &tree.entries {
+        check_condition(&entry.when, place_sites)?;
+    }
+    for node in &tree.nodes {
+        if let Some(name) = &node.sprite {
+            if !sprites.iter().any(|s| &s.name == name) {
+                return Err(TreeProblem::UnknownSprite(name.clone()));
+            }
+        }
+        for choice in &node.choices {
+            check_condition(&choice.when, place_sites)?;
+            for action in &choice.actions {
+                if let Action::SetFlag(flag) | Action::ClearFlag(flag) = action {
+                    check_flag(flag)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_flag(flag: &str) -> Result<(), TreeProblem> {
+    if flag.trim().is_empty() {
+        Err(TreeProblem::BlankFlag)
+    } else {
+        Ok(())
+    }
+}
+
+/// Walks a condition and everything nested inside it.
+fn check_condition(condition: &Condition, place_sites: &[String]) -> Result<(), TreeProblem> {
+    match condition {
+        Condition::All(inner) | Condition::Any(inner) => inner
+            .iter()
+            .try_for_each(|c| check_condition(c, place_sites)),
+        Condition::Not(inner) => check_condition(inner, place_sites),
+        Condition::Flag(flag) => check_flag(flag),
+        Condition::HourBetween { from, to } => {
+            match [*from, *to].into_iter().find(|h| *h >= HOURS_PER_DAY) {
+                Some(hour) => Err(TreeProblem::BadHour(hour)),
+                None => Ok(()),
+            }
+        }
+        Condition::PartyAtSite(key) if !place_sites.contains(key) => {
+            Err(TreeProblem::UnknownSite(key.clone()))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The keys of nodes that no entry and no choice leads to, in tree order.
+/// The editor warns about these. They are not an error.
+pub fn unreachable_nodes(tree: &DialogueTree) -> Vec<String> {
+    let mut reached: BTreeSet<&str> = BTreeSet::new();
+    let mut pending: Vec<&str> = tree.entries.iter().map(|e| e.node.as_str()).collect();
+    while let Some(key) = pending.pop() {
+        if !reached.insert(key) {
+            continue;
+        }
+        if let Some(node) = tree.node(key) {
+            pending.extend(node.choices.iter().filter_map(|c| c.next.as_deref()));
+        }
+    }
+    tree.nodes
+        .iter()
+        .filter(|n| !reached.contains(n.key.as_str()))
+        .map(|n| n.key.clone())
+        .collect()
 }
