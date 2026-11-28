@@ -6,6 +6,9 @@
 //! `ui(ui, file, context)` function; to add one, add a [`Tab`] variant,
 //! a module, and a line in [`tab_ui`].
 
+mod action;
+mod condition;
+mod dialogue;
 mod factions;
 mod inventory;
 mod location;
@@ -635,7 +638,7 @@ fn central_panel(
     }
 }
 
-/// Draws the body of one tab. Tabs not built yet say so.
+/// Draws the body of one tab.
 fn tab_ui(
     tab: Tab,
     ui: &mut egui::Ui,
@@ -649,9 +652,7 @@ fn tab_ui(
         Tab::Location => location::ui(ui, file, context),
         Tab::Factions => factions::ui(ui, file, context),
         Tab::Sprites => sprites::ui(ui, file, previews),
-        Tab::Dialogue => {
-            ui.label("Coming in a later task");
-        }
+        Tab::Dialogue => dialogue::ui(ui, file, context),
     }
 }
 
