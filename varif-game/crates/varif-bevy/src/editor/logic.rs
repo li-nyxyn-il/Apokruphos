@@ -126,6 +126,34 @@ pub fn people_from(main: &str, disk: &[(String, String)]) -> Result<Vec<PersonFi
         .collect())
 }
 
+/// Splits the people files into those that load alongside the main file
+/// and those that do not, with the load error for each of the latter. One
+/// bad file therefore cannot stop the rest from being edited.
+pub fn split_people_files(
+    main: &str,
+    files: Vec<(String, String)>,
+) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let mut good: Vec<(String, String)> = Vec::new();
+    let mut broken = Vec::new();
+    for file in files {
+        good.push(file);
+        if let Err(error) = load_world_with_people(main, &good) {
+            let file = good.pop().expect("just pushed");
+            broken.push((file.0, error.to_string()));
+        }
+    }
+    (good, broken)
+}
+
+/// The people files that load, and those that do not with their errors.
+pub type SplitFiles = (Vec<(String, String)>, Vec<(String, String)>);
+
+/// Reads `data/people/` and splits it as [`split_people_files`] does.
+pub fn read_disk(data_dir: &Path, main: &str) -> io::Result<SplitFiles> {
+    let files = varif_core::read_people_dir(&people_dir(data_dir))?;
+    Ok(split_people_files(main, files))
+}
+
 /// Checks one person the way a load would, and adds the warnings a load
 /// does not raise. `other_keys` are the keys of everyone else in the list.
 pub fn find_problems(
@@ -183,25 +211,30 @@ pub fn delete_person(data_dir: &Path, key: &str) -> io::Result<bool> {
     }
 }
 
+/// The real data file, for tests.
+#[cfg(test)]
+pub const TEST_MAIN: &str = include_str!("../../../../data/first_leg.ron");
+
+/// A fresh empty folder under the system temp dir, for tests.
+#[cfg(test)]
+pub fn scratch_dir() -> PathBuf {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "varif-editor-test-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
-    const MAIN: &str = include_str!("../../../../data/first_leg.ron");
-
-    /// A fresh empty folder under the system temp dir.
-    fn scratch_dir() -> PathBuf {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let dir = std::env::temp_dir().join(format!(
-            "varif-editor-test-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::SeqCst)
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    const MAIN: &str = TEST_MAIN;
 
     /// The first place and, if it has sites, its first site.
     fn first_place() -> (String, Option<String>) {
@@ -326,6 +359,19 @@ mod tests {
         assert!(delete_person(&dir, "test-writer").unwrap());
         assert!(!path.exists());
         assert!(!delete_person(&dir, "test-writer").unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_broken_people_file_is_set_aside_and_the_rest_load() {
+        let dir = scratch_dir();
+        write_person(&dir, &blank_at_start("fine")).unwrap();
+        fs::write(person_path(&dir, "broken"), "this is not ron").unwrap();
+        let (good, broken) = read_disk(&dir, MAIN).unwrap();
+        assert_eq!(good.len(), 1);
+        assert_eq!(good[0].0, "fine");
+        assert_eq!(broken.len(), 1);
+        assert_eq!(broken[0].0, "broken");
         let _ = fs::remove_dir_all(&dir);
     }
 

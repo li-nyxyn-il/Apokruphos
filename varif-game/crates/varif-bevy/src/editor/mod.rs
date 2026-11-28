@@ -16,7 +16,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use varif_core::{load_world_with_people, read_people_dir, Hostility, PersonFile};
+use varif_core::{load_world_with_people, Hostility, PersonFile};
 
 use logic::{
     blank_person, copy_key, delete_person, find_problems, is_saved, people_from, person_from_main,
@@ -93,6 +93,9 @@ pub struct EditorState {
     /// The check reloads the whole data file, so it only runs after a
     /// change.
     pub dirty: bool,
+    /// People files that do not load, as (file stem, error). They are set
+    /// aside: not in `people` and not used by the checks.
+    pub broken: Vec<(String, String)>,
     /// The selected person's problems, errors first, ready to show.
     pub problems: Vec<String>,
     /// True when `problems` holds an error. That stops a save.
@@ -112,18 +115,37 @@ impl EditorState {
             .map(Path::to_path_buf)
             .filter(|dir| !dir.as_os_str().is_empty())
             .unwrap_or_else(|| PathBuf::from("."));
-        let disk = read_people_dir(&logic::people_dir(&data_dir)).map_err(|error| {
-            format!(
-                "Could not read the people files beside {}: {error}",
-                path.display()
-            )
-        })?;
-        let world = load_world_with_people(&main_text, &disk)
-            .map_err(|error| format!("Could not load {}: {error}", path.display()))?;
+        EditorState::from_parts(main_text, data_dir)
+            .map_err(|error| format!("Could not load {}: {error}", path.display()))
+    }
+
+    /// Builds the editor from the main data file's text and its folder.
+    /// Only a main file that does not load is an error: a people file that
+    /// does not load is set aside and listed under the problems, so the
+    /// editor can still be used to fix it.
+    pub fn from_parts(
+        main_text: String,
+        data_dir: PathBuf,
+    ) -> Result<(EditorState, EditorContext), String> {
         let main_keys: Vec<String> = people_from(&main_text, &[])?
             .into_iter()
             .map(|file| file.key)
             .collect();
+        let mut status = String::new();
+        let (disk, broken) = match logic::read_disk(&data_dir, &main_text) {
+            Ok(split) => split,
+            Err(error) => {
+                status = format!("Could not read data/people/: {error}");
+                (Vec::new(), Vec::new())
+            }
+        };
+        if !broken.is_empty() {
+            status = format!(
+                "{} people file(s) do not load and are set aside; see below the list.",
+                broken.len()
+            );
+        }
+        let world = load_world_with_people(&main_text, &disk).map_err(|error| error.to_string())?;
         let people = people_from(&main_text, &disk)?;
 
         let context = EditorContext {
@@ -153,12 +175,13 @@ impl EditorState {
             main_text,
             data_dir,
             disk,
+            broken,
             selected: None,
             tab: Tab::Sheet,
             dirty: false,
             problems: Vec::new(),
             has_error: false,
-            status: String::new(),
+            status,
             confirm_delete: false,
         };
         Ok((state, context))
@@ -221,10 +244,16 @@ impl EditorState {
             .collect();
     }
 
-    fn reload_disk(&mut self) {
-        match read_people_dir(&logic::people_dir(&self.data_dir)) {
-            Ok(disk) => self.disk = disk,
-            Err(error) => self.status = format!("Could not re-read data/people/: {error}"),
+    /// Reads `data/people/` again. On failure the old list stays and the
+    /// error says so.
+    fn reload_disk(&mut self) -> Result<(), String> {
+        match logic::read_disk(&self.data_dir, &self.main_text) {
+            Ok((disk, broken)) => {
+                self.disk = disk;
+                self.broken = broken;
+                Ok(())
+            }
+            Err(error) => Err(format!("Could not re-read data/people/: {error}")),
         }
     }
 
@@ -269,6 +298,8 @@ impl EditorState {
         let Some(index) = self.selected else {
             return;
         };
+        // An edit made this frame may not have been checked yet.
+        self.refresh_problems();
         if self.has_error {
             return;
         }
@@ -288,9 +319,12 @@ impl EditorState {
                         " The key changed from {old_key}, so {old_key}.ron is still in data/people/ until you Delete it."
                     ));
                 }
+                if let Err(message) = self.reload_disk() {
+                    status.push(' ');
+                    status.push_str(&message);
+                }
                 self.status = status;
                 self.edited[index] = false;
-                self.reload_disk();
                 self.dirty = true;
             }
             Err(error) => self.status = format!("Could not save: {error}"),
@@ -314,8 +348,11 @@ impl EditorState {
         }
         match delete_person(&self.data_dir, &key) {
             Ok(_) => {
-                self.reload_disk();
                 self.status = format!("Deleted {}.", person_path(&self.data_dir, &key).display());
+                if let Err(message) = self.reload_disk() {
+                    self.status.push(' ');
+                    self.status.push_str(&message);
+                }
                 match self.from_file[index].then(|| person_from_main(&self.main_text, &key)) {
                     Some(Some(original)) => {
                         self.people[index] = original;
@@ -333,25 +370,14 @@ impl EditorState {
     }
 }
 
-/// Starts the editor: the resources and the egui system.
-pub struct EditorPlugin {
-    pub data_path: PathBuf,
-}
+/// Starts the editor: adds the egui system. The caller inserts the
+/// [`EditorState`] and [`EditorContext`] from [`EditorState::load`].
+pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        match EditorState::load(&self.data_path) {
-            Ok((state, context)) => {
-                app.insert_resource(state)
-                    .insert_resource(context)
-                    .add_systems(Startup, spawn_camera)
-                    .add_systems(EguiPrimaryContextPass, editor_ui);
-            }
-            Err(message) => {
-                eprintln!("{message}");
-                std::process::exit(1);
-            }
-        }
+        app.add_systems(Startup, spawn_camera)
+            .add_systems(EguiPrimaryContextPass, editor_ui);
     }
 }
 
@@ -496,6 +522,20 @@ fn people_panel(ui: &mut egui::Ui, state: &EditorState, actions: &mut Vec<Action
             }
         });
 
+    if !state.broken.is_empty() {
+        ui.separator();
+        ui.strong("People files that do not load");
+        for (stem, error) in &state.broken {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("{stem}.ron: {error}"))
+                        .color(egui::Color32::LIGHT_RED),
+                )
+                .wrap(),
+            );
+        }
+    }
+
     ui.separator();
     ui.strong("Problems");
     egui::ScrollArea::vertical()
@@ -589,4 +629,187 @@ pub fn combo<T: Copy + PartialEq>(
                 ui.selectable_value(value, option, name(option));
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::logic::{scratch_dir, TEST_MAIN};
+    use super::*;
+
+    fn state_in(dir: &Path) -> EditorState {
+        EditorState::from_parts(TEST_MAIN.to_string(), dir.to_path_buf())
+            .unwrap()
+            .0
+    }
+
+    fn index_of(state: &EditorState, key: &str) -> usize {
+        state.people.iter().position(|p| p.key == key).unwrap()
+    }
+
+    #[test]
+    fn saving_a_main_file_person_marks_it_saved_and_says_it_is_shadowed() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        assert!(state.is_unsaved_main_person(at));
+
+        state.select(Some(at));
+        state.people[at].sheet.as_mut().unwrap().age += 1;
+        state.save();
+
+        assert!(person_path(&dir, "jonnoj").exists(), "{}", state.status);
+        assert!(state.status.contains("first_leg.ron is now shadowed"));
+        assert!(!state.is_unsaved_main_person(at));
+        assert!(!state.edited[at]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_checks_for_itself_and_refuses_an_error() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        state.select(Some(at));
+        state.refresh_problems();
+        assert!(!state.has_error);
+
+        // An edit this frame, not yet checked: Save must still refuse.
+        state.people[at].at = "nowhere".to_string();
+        state.dirty = true;
+        state.save();
+
+        assert!(state.has_error);
+        assert!(!person_path(&dir, "jonnoj").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleting_a_saved_main_file_person_restores_the_original() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        let original = state.people[at].clone();
+        state.select(Some(at));
+        state.people[at].name = "Changed".to_string();
+        state.save();
+        let count = state.people.len();
+
+        state.delete();
+
+        assert!(!person_path(&dir, "jonnoj").exists());
+        assert_eq!(state.people.len(), count);
+        assert_eq!(state.people[at], original);
+        assert!(state.is_unsaved_main_person(at));
+        assert!(state.status.contains("back in the list"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleting_an_unsaved_main_file_person_does_nothing() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        let count = state.people.len();
+        state.select(Some(at));
+        state.delete();
+        assert_eq!(state.people.len(), count);
+        assert!(state.status.contains("nothing to delete"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_new_person_is_dropped_by_delete_and_the_selection_moves() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let count = state.people.len();
+
+        state.new_person("yhlgrym", Some("gate"));
+        assert_eq!(state.selected, Some(count));
+        assert_eq!(state.people[count].key, "new-npc");
+        state.new_person("yhlgrym", Some("gate"));
+        assert_eq!(state.people[count + 1].key, "new-npc-2");
+
+        state.select(Some(count));
+        state.delete();
+        assert_eq!(state.people.len(), count + 1);
+        assert_eq!(state.selected, Some(count));
+        assert_eq!(state.people[count].key, "new-npc-2");
+
+        state.delete();
+        assert_eq!(state.people.len(), count);
+        assert_eq!(state.selected, Some(count - 1));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_duplicate_gets_a_new_key_and_saves_without_a_prior_check() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        state.select(Some(at));
+        state.duplicate();
+
+        let copy = state.selected.unwrap();
+        assert_eq!(state.people[copy].key, "jonnoj-copy");
+        assert!(!state.from_file[copy]);
+        assert!(state.edited[copy]);
+
+        state.save();
+        assert!(
+            person_path(&dir, "jonnoj-copy").exists(),
+            "{}",
+            state.status
+        );
+        assert!(!state.status.contains("shadowed"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn renaming_a_saved_person_notes_that_the_old_file_stays() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        state.select(Some(at));
+        state.save();
+        state.people[at].key = "jonnoj-two".to_string();
+        state.dirty = true;
+        state.save();
+        assert!(person_path(&dir, "jonnoj-two").exists());
+        assert!(person_path(&dir, "jonnoj").exists());
+        assert!(state.status.contains("still in data/people/"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_broken_people_file_does_not_stop_the_editor_opening() {
+        let dir = scratch_dir();
+        fs::create_dir_all(logic::people_dir(&dir)).unwrap();
+        fs::write(person_path(&dir, "broken"), "this is not ron").unwrap();
+        let plain = people_from(TEST_MAIN, &[]).unwrap().len();
+
+        let state = state_in(&dir);
+        assert_eq!(state.broken.len(), 1);
+        assert_eq!(state.broken[0].0, "broken");
+        assert_eq!(state.people.len(), plain);
+        assert!(state.status.contains("do not load"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_broken_main_file_is_an_error() {
+        let dir = scratch_dir();
+        assert!(EditorState::from_parts("nonsense".to_string(), dir.clone()).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_reread_of_the_people_folder_is_reported() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        // A file where the folder should be makes the folder unreadable.
+        fs::write(logic::people_dir(&dir), "not a folder").unwrap();
+        let error = state.reload_disk().unwrap_err();
+        assert!(error.contains("Could not re-read"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

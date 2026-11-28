@@ -31,26 +31,19 @@ fn main() {
         }
     }
     let path = path.unwrap_or_else(|| DEFAULT_DATA.to_string());
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(error) => {
-            eprintln!("Could not open {path}: {error}");
+    // The editor loads the data itself, so a broken people file does not
+    // stop it from opening.
+    let edit_data = edit.then(|| match editor::EditorState::load(Path::new(&path)) {
+        Ok(loaded) => loaded,
+        Err(message) => {
+            eprintln!("{message}");
             process::exit(1);
         }
-    };
-    let people = match varif_core::read_people_dir(&Path::new(&path).with_file_name("people")) {
-        Ok(people) => people,
-        Err(error) => {
-            eprintln!("Could not read the people files beside {path}: {error}");
-            process::exit(1);
-        }
-    };
-    let world = match load_world_with_people(&text, &people) {
-        Ok(world) => world,
-        Err(error) => {
-            eprintln!("Could not load {path}: {error}");
-            process::exit(1);
-        }
+    });
+    let world = if edit {
+        None
+    } else {
+        Some(load_game_world(&path))
     };
 
     let mut app = App::new();
@@ -69,17 +62,42 @@ fn main() {
                 ..default()
             }),
     )
-    .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.06)))
-    .insert_resource(GameWorld(world));
-    if edit {
-        app.add_plugins(EguiPlugin::default())
-            .add_plugins(editor::EditorPlugin {
-                data_path: path.into(),
-            });
-    } else {
-        app.add_systems(Startup, setup);
+    .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.06)));
+    if let Some((state, context)) = edit_data {
+        app.insert_resource(state)
+            .insert_resource(context)
+            .add_plugins(EguiPlugin::default())
+            .add_plugins(editor::EditorPlugin);
+    } else if let Some(world) = world {
+        app.insert_resource(GameWorld(world))
+            .add_systems(Startup, setup);
     }
     app.run();
+}
+
+/// Loads the world and the people files, or says why not and exits.
+fn load_game_world(path: &str) -> VarifWorld {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!("Could not open {path}: {error}");
+            process::exit(1);
+        }
+    };
+    let people = match varif_core::read_people_dir(&Path::new(path).with_file_name("people")) {
+        Ok(people) => people,
+        Err(error) => {
+            eprintln!("Could not read the people files beside {path}: {error}");
+            process::exit(1);
+        }
+    };
+    match load_world_with_people(&text, &people) {
+        Ok(world) => world,
+        Err(error) => {
+            eprintln!("Could not load {path}: {error}");
+            process::exit(1);
+        }
+    }
 }
 
 fn setup(mut commands: Commands, game: Res<GameWorld>) {
