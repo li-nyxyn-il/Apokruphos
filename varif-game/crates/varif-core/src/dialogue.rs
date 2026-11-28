@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::character::Item;
 use crate::faction::FactionId;
 use crate::ids::PersonId;
-use crate::npc::Bucket;
+use crate::npc::{Bucket, DialogueLine};
 use crate::world::World;
 
 /// A whole conversation an NPC can hold.
@@ -25,6 +25,56 @@ impl DialogueTree {
     /// The node with this key, if the tree has one.
     pub fn node(&self, key: &str) -> Option<&Node> {
         self.nodes.iter().find(|node| node.key == key)
+    }
+}
+
+/// The key of the node a default tree opens at.
+pub const DEFAULT_START: &str = "start";
+
+/// The tree an NPC without one of their own talks through, made from flat
+/// lines (the world's general lines, then their own).
+///
+/// It has one entry, always open, into the node [`DEFAULT_START`], whose NPC
+/// line is blank. That node offers each line while its bucket is open. A
+/// line with a reply leads to a node `reply-<n>` saying it, which offers the
+/// same lines again; a line without one leads back to the start. Nothing
+/// ends the conversation but leaving it.
+pub fn default_tree(lines: &[DialogueLine]) -> DialogueTree {
+    let reply_key = |index: usize| format!("reply-{}", index + 1);
+    let choices: Vec<Choice> = lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| Choice {
+            text: line.text.clone(),
+            when: Condition::Bucket(line.bucket),
+            actions: Vec::new(),
+            next: Some(if line.reply.trim().is_empty() {
+                DEFAULT_START.to_string()
+            } else {
+                reply_key(index)
+            }),
+        })
+        .collect();
+    let node = |key: String, line: String| Node {
+        key,
+        line,
+        sprite: None,
+        choices: choices.clone(),
+    };
+    let mut nodes = vec![node(DEFAULT_START.to_string(), String::new())];
+    nodes.extend(
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| !line.reply.trim().is_empty())
+            .map(|(index, line)| node(reply_key(index), line.reply.clone())),
+    );
+    DialogueTree {
+        entries: vec![Entry {
+            when: Condition::Always,
+            node: DEFAULT_START.to_string(),
+        }],
+        nodes,
     }
 }
 

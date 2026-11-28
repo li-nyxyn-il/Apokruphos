@@ -2,7 +2,8 @@
 //! conversations run through the commands.
 
 use varif_core::{
-    load_world, Action, Band, Bucket, Choice, Command, CommandError, Compare, Condition,
+    default_tree, load_world, Action, Band, Bucket, Choice, Command, CommandError, Compare,
+    Condition, DialogueLine, DEFAULT_START,
     DialogueTree, Entry, Event, FactionId, Item, ItemType, Node, PersonId, Rarity, World,
 };
 
@@ -319,7 +320,7 @@ fn entry_chosen_by_hostility() {
         .unwrap();
     let events = world.apply(Command::Interact { person: hest }).unwrap();
     assert_eq!(opening(&events), "cold line");
-    assert_eq!(world.npc_line(), Some("cold line"));
+    assert_eq!(world.npc_line().as_deref(), Some("cold line"));
 }
 
 #[test]
@@ -361,13 +362,13 @@ fn choice_conditions_filter_options() {
 fn say_follows_next_and_replies_with_its_line() {
     let (mut world, hest) = with_tree(one_choice(vec![], Some("after")));
     world.apply(Command::Interact { person: hest }).unwrap();
-    assert_eq!(world.npc_line(), Some("start line"));
+    assert_eq!(world.npc_line().as_deref(), Some("start line"));
     let events = world.apply(Command::Say { line: 0 }).unwrap();
     assert!(matches!(
         &events[..],
         [Event::Said { text, reply, .. }] if text == "go" && reply == "after line"
     ));
-    assert_eq!(world.npc_line(), Some("after line"));
+    assert_eq!(world.npc_line().as_deref(), Some("after line"));
     assert_eq!(world.conversation, Some(hest));
     assert_eq!(world.conversation_node.as_deref(), Some("after"));
 }
@@ -574,7 +575,7 @@ fn grant_and_journal_and_flags() {
 }
 
 #[test]
-fn flat_line_npc_still_talks() {
+fn npc_without_a_tree_opens_the_default_start_node() {
     let mut world = first_leg();
     at_yhlgrym(&mut world);
     let syla = person(&world, "syla");
@@ -582,11 +583,88 @@ fn flat_line_npc_still_talks() {
     world.apply(Command::Walk { to: site }).unwrap();
     let events = world.apply(Command::Interact { person: syla }).unwrap();
     assert_eq!(opening(&events), "");
-    assert_eq!(world.conversation_node, None);
+    assert_eq!(world.conversation_node.as_deref(), Some(DEFAULT_START));
     assert_eq!(world.npc_line(), None);
     let options = world.dialogue_options(syla);
     assert!(!options.is_empty());
     assert!(options.iter().any(|o| o.label == "average friendliness"));
+}
+
+#[test]
+fn a_default_line_with_a_reply_moves_to_it_and_offers_the_lines_again() {
+    let mut world = first_leg();
+    at_yhlgrym(&mut world);
+    let syla = person(&world, "syla");
+    let site = world.people[syla.index()].site.expect("at a site");
+    world.apply(Command::Walk { to: site }).unwrap();
+    world.apply(Command::Interact { person: syla }).unwrap();
+    let before = world.dialogue_options(syla);
+    let tree = world.tree_of(syla).unwrap();
+    let start = tree.node(DEFAULT_START).unwrap();
+    let index = before
+        .iter()
+        .position(|option| {
+            start.choices.iter().any(|c| {
+                c.text == option.text && c.next.as_deref() != Some(DEFAULT_START)
+            })
+        })
+        .expect("a line with a reply");
+    let events = world.apply(Command::Say { line: index }).unwrap();
+    let reply = events
+        .iter()
+        .find_map(|event| match event {
+            Event::Said { reply, .. } => Some(reply.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert!(!reply.is_empty());
+    assert_eq!(world.npc_line(), Some(reply));
+    assert_eq!(world.conversation, Some(syla), "still talking");
+    assert_eq!(world.dialogue_options(syla), before);
+}
+
+#[test]
+fn default_tree_makes_a_start_node_and_a_node_per_reply() {
+    let lines = vec![
+        DialogueLine {
+            bucket: Bucket::Follower,
+            text: "Hello".into(),
+            reply: "Hi".into(),
+        },
+        DialogueLine {
+            bucket: Bucket::Attitude(Band::Low),
+            text: "Hm".into(),
+            reply: String::new(),
+        },
+    ];
+    let tree = default_tree(&lines);
+    assert_eq!(tree.entries.len(), 1);
+    assert_eq!(tree.entries[0].when, Condition::Always);
+    assert_eq!(tree.entries[0].node, DEFAULT_START);
+    let keys: Vec<&str> = tree.nodes.iter().map(|n| n.key.as_str()).collect();
+    assert_eq!(keys, [DEFAULT_START, "reply-1"]);
+    let start = tree.node(DEFAULT_START).unwrap();
+    assert_eq!(start.line, "");
+    assert_eq!(start.choices[0].when, Condition::Bucket(Bucket::Follower));
+    assert_eq!(start.choices[0].next.as_deref(), Some("reply-1"));
+    assert_eq!(start.choices[1].next.as_deref(), Some(DEFAULT_START));
+    assert_eq!(tree.node("reply-1").unwrap().line, "Hi");
+    assert_eq!(tree.node("reply-1").unwrap().choices, start.choices);
+    assert_eq!(varif_core::check_tree(&tree, &[], &[]), Ok(()));
+}
+
+#[test]
+fn an_old_save_mid_conversation_without_a_node_reads_as_the_start() {
+    let mut world = first_leg();
+    at_yhlgrym(&mut world);
+    let syla = person(&world, "syla");
+    let site = world.people[syla.index()].site.expect("at a site");
+    world.apply(Command::Walk { to: site }).unwrap();
+    world.apply(Command::Interact { person: syla }).unwrap();
+    let offered = world.dialogue_options(syla);
+    world.conversation_node = None;
+    assert_eq!(world.dialogue_options(syla), offered);
+    world.apply(Command::Say { line: 0 }).unwrap();
 }
 
 #[test]

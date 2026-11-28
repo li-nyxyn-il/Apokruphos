@@ -258,6 +258,7 @@ mod tests {
                 })
                 .collect(),
             hostility: world.hostility.clone(),
+            general: world.dialogue.clone(),
         }
     }
 

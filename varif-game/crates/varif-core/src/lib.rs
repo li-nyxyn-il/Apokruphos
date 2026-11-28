@@ -39,7 +39,10 @@ pub use data::{
     person_file_text, read_people_dir, unreachable_nodes, DataError, PersonFile, ScheduleData,
     SpanData, TreeProblem,
 };
-pub use dialogue::{Action, Choice, Compare, Condition, DialogueTree, Entry, Frame, Node, Sprite};
+pub use dialogue::{
+    default_tree, Action, Choice, Compare, Condition, DialogueTree, Entry, Frame, Node, Sprite,
+    DEFAULT_START,
+};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};
 pub use npc::{friendliness, Band, Bucket, DialogueLine, Standing, MIN_FRIENDLINESS_TO_TALK};

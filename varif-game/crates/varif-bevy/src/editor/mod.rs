@@ -77,6 +77,8 @@ pub struct EditorContext {
     pub places: Vec<PlaceInfo>,
     /// The live hostility table, for showing how factions stand.
     pub hostility: Hostility,
+    /// The data file's general dialogue lines, which a new tree starts from.
+    pub general: Vec<varif_core::DialogueLine>,
 }
 
 /// The data file's name when the editor is built from text, not a path.
@@ -184,6 +186,7 @@ impl EditorState {
                 })
                 .collect(),
             hostility: world.hostility.clone(),
+            general: world.dialogue.clone(),
         };
         let state = EditorState {
             from_file: people
