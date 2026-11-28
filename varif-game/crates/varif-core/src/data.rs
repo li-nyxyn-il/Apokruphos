@@ -13,7 +13,7 @@ use crate::schedule::{RoadLeg, Schedule, Span, Whereabouts};
 use crate::sky::Sky;
 use crate::world::{Person, Place, Road, SiteKind, TimeMode, World};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 #[derive(Debug, Deserialize)]
@@ -354,6 +354,8 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             dialogue: person.dialogue,
             site,
             schedule,
+            tree: None,
+            sprites: Vec::new(),
         });
     }
 
@@ -377,6 +379,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         dialogue: data.dialogue,
         conversation: None,
         sky: Sky::new(start.seed),
+        flags: BTreeSet::new(),
     })
 }
 

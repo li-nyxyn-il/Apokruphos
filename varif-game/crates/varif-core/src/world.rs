@@ -1,5 +1,6 @@
 //! The state of the world: tables of places, roads and people, plus the party.
 
+use crate::dialogue::{DialogueTree, Sprite};
 use crate::calendar::{Date, DAYS_PER_YEAR, HOURS_PER_DAY, MINUTES_PER_DAY, MINUTES_PER_HOUR};
 use crate::character::Character;
 use crate::faction::{FactionId, Hostility};
@@ -9,6 +10,7 @@ use crate::rng::Rng;
 use crate::schedule::{Schedule, Whereabouts};
 use crate::sky::Sky;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +221,12 @@ pub struct Person {
     /// anyone forward.
     #[serde(default)]
     pub schedule: Schedule,
+    /// A scripted conversation. Without one they say the flat bucket lines.
+    #[serde(default)]
+    pub tree: Option<DialogueTree>,
+    /// Named pictures the person can be shown with.
+    #[serde(default)]
+    pub sprites: Vec<Sprite>,
 }
 
 impl Person {
@@ -366,6 +374,10 @@ pub struct World {
     /// made, and turned to the next night each noon by [`World::advance`].
     #[serde(default)]
     pub sky: Sky,
+    /// Named marks the story has set. Dialogue conditions read them and
+    /// dialogue actions set and clear them.
+    #[serde(default)]
+    pub flags: BTreeSet<String>,
 }
 
 impl World {

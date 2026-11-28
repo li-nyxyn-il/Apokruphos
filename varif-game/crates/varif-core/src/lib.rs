@@ -12,6 +12,7 @@ pub mod calendar;
 pub mod character;
 pub mod command;
 pub mod data;
+pub mod dialogue;
 pub mod faction;
 pub mod ids;
 pub mod npc;
@@ -33,6 +34,9 @@ pub use command::{
     PACK_UP_HOURS, REST_HOURS, UNTIRED_HOURS,
 };
 pub use data::{load_world, DataError};
+pub use dialogue::{
+    Action, Choice, Compare, Condition, DialogueTree, Entry, Frame, Node, Sprite,
+};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};
 pub use npc::{friendliness, Band, Bucket, DialogueLine, Standing, MIN_FRIENDLINESS_TO_TALK};
