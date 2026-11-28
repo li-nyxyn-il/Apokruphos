@@ -11,3 +11,4 @@ path = "src/main.rs"
 [dependencies]
 varif-core = { path = "../varif-core" }
 bevy.workspace = true
+bevy_egui.workspace = true

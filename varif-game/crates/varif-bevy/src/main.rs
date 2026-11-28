@@ -2,8 +2,14 @@
 //!
 //! Run it from the workspace folder with `cargo bevy`, or pass a data file:
 //! `cargo bevy -- data/first_leg.ron`.
+//!
+//! Add `--edit` to open the NPC editor instead of the game:
+//! `cargo bevy -- --edit [data file]`.
+
+mod editor;
 
 use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
 use std::{env, fs, path::Path, process};
 use varif_core::{load_world_with_people, World as VarifWorld};
 
@@ -15,9 +21,16 @@ const DEFAULT_DATA: &str = "data/first_leg.ron";
 struct GameWorld(VarifWorld);
 
 fn main() {
-    let path = env::args()
-        .nth(1)
-        .unwrap_or_else(|| DEFAULT_DATA.to_string());
+    let mut edit = false;
+    let mut path = None;
+    for argument in env::args().skip(1) {
+        if argument == "--edit" {
+            edit = true;
+        } else if path.is_none() {
+            path = Some(argument);
+        }
+    }
+    let path = path.unwrap_or_else(|| DEFAULT_DATA.to_string());
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) => {
@@ -40,18 +53,33 @@ fn main() {
         }
     };
 
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Varif".into(),
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: if edit { "Varif editor" } else { "Varif" }.into(),
+                    ..default()
+                }),
+                ..default()
+            })
+            // The workspace's own `assets/` folder, wherever the binary is run from.
+            .set(AssetPlugin {
+                file_path: concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets").into(),
                 ..default()
             }),
-            ..default()
-        }))
-        .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.06)))
-        .insert_resource(GameWorld(world))
-        .add_systems(Startup, setup)
-        .run();
+    )
+    .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.06)))
+    .insert_resource(GameWorld(world));
+    if edit {
+        app.add_plugins(EguiPlugin::default())
+            .add_plugins(editor::EditorPlugin {
+                data_path: path.into(),
+            });
+    } else {
+        app.add_systems(Startup, setup);
+    }
+    app.run();
 }
 
 fn setup(mut commands: Commands, game: Res<GameWorld>) {
