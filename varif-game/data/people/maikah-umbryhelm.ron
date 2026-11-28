@@ -1,0 +1,442 @@
+(
+    key: "maikah-umbryhelm",
+    name: "Maikah Umbryhelm",
+    title: "Traveller",
+    at: "heedhaim",
+    site: None,
+    in_party: false,
+    recruitable: true,
+    sheet: Some((
+        role: Npc(
+            follower: false,
+            attitude: 75,
+        ),
+        age: 16,
+        blood: Red,
+        heritage: Shentzi,
+        akstada: Thief,
+        health: 100,
+        fatigue: 100,
+        road_rest_debt: false,
+        resilience: 100,
+        resilience_max: 100,
+        vitality_bonus: 0,
+        tongues: [
+            Shentz,
+            Vinhili,
+        ],
+        background: "A Shentzlian boy exploring the world",
+        primary: Bandit,
+        secondary: [],
+        level: 1,
+        inventory: [],
+        equipped: [],
+    )),
+    dialogue: [],
+    schedule: (
+        spans: [
+            (
+                hours: 24,
+                place: "heedhaim",
+                site: None,
+                road_from: None,
+                road_to: None,
+            ),
+        ],
+    ),
+    tree: Some((
+        entries: [
+            (
+                when: All([
+                    Flag("met"),
+                    Not(Flag("pissed-off")),
+                ]),
+                node: "start",
+            ),
+            (
+                when: All([
+                    Flag("rejected-recruit"),
+                ]),
+                node: "met-rejected-start",
+            ),
+            (
+                when: All([
+                    Not(Flag("pissed-off")),
+                    Flag("met"),
+                ]),
+                node: "met-start",
+            ),
+            (
+                when: Any([
+                    Flag("pissed-off"),
+                ]),
+                node: "pissed-off",
+            ),
+        ],
+        nodes: [
+            (
+                key: "start",
+                line: "Well how ya do there fellow traveller? You don\'t look like you\'re from around here, though, honestly, I wouldn\'t know, since, ya know, I\'m not from around here either. I\'m Maikah. Pleasure to make your acquaintence!",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Goodday, what brings you here?",
+                        when: Not(IsFollower),
+                        actions: [
+                            ChangeAttitude(5),
+                            WriteJournal("I met a kid named Maikah. He seems... exciteable"),
+                            SetFlag("met"),
+                        ],
+                        next: Some("greeted"),
+                    ),
+                    (
+                        text: "Piss off kid.",
+                        when: Not(IsFollower),
+                        actions: [
+                            ChangeAttitude(-20),
+                            SetFlag("pissed-off"),
+                        ],
+                        next: None,
+                    ),
+                    (
+                        text: "Goodbye.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "greeted",
+                line: "To Heedhaim? Oh, of course, where else? That\'s a good question! You seem good at that. Well, you see, I\'m going on an adventure!",
+                sprite: None,
+                choices: [
+                    (
+                        text: "What kind of aventure?",
+                        when: Always,
+                        actions: [],
+                        next: Some("adventure-1"),
+                    ),
+                    (
+                        text: "Me too.",
+                        when: Always,
+                        actions: [],
+                        next: Some("adventure-2"),
+                    ),
+                    (
+                        text: "Oh, well okay. Goodbye.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "adventure-1",
+                line: "Does it need to be a specific kind? Oh no. I haven\'t gotten that far. What kinds are there?",
+                sprite: None,
+                choices: [
+                    (
+                        text: "There\'s lots of kinds. If you want, you can tag along with me and see for yourself. We get up to all sorts of stuff.",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(10),
+                            Recruit,
+                        ],
+                        next: Some("recruited"),
+                    ),
+                    (
+                        text: "How are you still breathing?",
+                        when: Always,
+                        actions: [],
+                        next: Some("breathing"),
+                    ),
+                    (
+                        text: "Well are you a wanderer or are you going somewhere in particular?",
+                        when: Always,
+                        actions: [],
+                        next: Some("wander"),
+                    ),
+                ],
+            ),
+            (
+                key: "adventure-2",
+                line: "Oh! That\'s incredible! Uh.. where are you going?",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Here",
+                        when: Always,
+                        actions: [],
+                        next: Some("wind-down"),
+                    ),
+                    (
+                        text: "Just passing through",
+                        when: Always,
+                        actions: [],
+                        next: Some("pre-recruit"),
+                    ),
+                    (
+                        text: "None of your business",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(-5),
+                        ],
+                        next: Some("wind-down"),
+                    ),
+                    (
+                        text: "I\'m not sure ",
+                        when: Always,
+                        actions: [],
+                        next: Some("pre-recruit"),
+                    ),
+                ],
+            ),
+            (
+                key: "wind-down",
+                line: "Oh, okay. Well it was nice to meet you.",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Yeah, whatever.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                    (
+                        text: "You too.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                    (
+                        text: "Piss off, kid.",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(-10),
+                            SetFlag("pissed-off"),
+                        ],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "pre-recruit",
+                line: "Oh, okay. Well... say, I was wondering. Could I... Could I join you? To be honest, I\'m not too good at this whole adventuring thing. I\'ve gotten robbed twice, almost died three times, lost my way six times, forgotten where I am twelve times, and contracted at least three separate diseases. I could really use someone who knows what they\'re doing",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Oh... Um.. No I don\'t think so.",
+                        when: Always,
+                        actions: [],
+                        next: Some("rejected-recruit"),
+                    ),
+                    (
+                        text: "Sure. I\'ve been looking for someone to carry my extra things.",
+                        when: Always,
+                        actions: [
+                            Recruit,
+                            ChangeAttitude(-5),
+                        ],
+                        next: Some("recruited"),
+                    ),
+                    (
+                        text: "I would be glad to have you join me.",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(10),
+                            Recruit,
+                        ],
+                        next: Some("recruited"),
+                    ),
+                ],
+            ),
+            (
+                key: "recruited",
+                line: "That would be... I would be honored! Thank you!",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Yeah, whatever.",
+                        when: Always,
+                        actions: [],
+                        next: Some("start"),
+                    ),
+                    (
+                        text: "Alright, lets get going then",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                    (
+                        text: "Just don\'t fall behind, kid.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "breathing",
+                line: "I... I... Should I not be?",
+                sprite: None,
+                choices: [
+                    (
+                        text: "I\'m just impressed",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(5),
+                        ],
+                        next: Some("pre-recruit"),
+                    ),
+                    (
+                        text: "Probably not",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(-10),
+                        ],
+                        next: None,
+                    ),
+                    (
+                        text: "I can fix that (attack)",
+                        when: Always,
+                        actions: [
+                            StartCombat,
+                            ChangeAttitude(-30),
+                        ],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "wander",
+                line: "I don\'t really know where I\'m going. I left my home and just... picked a direction I guess. ",
+                sprite: None,
+                choices: [
+                    (
+                        text: "You should figure our where you\'re going.",
+                        when: Always,
+                        actions: [],
+                        next: Some("pre-recruit"),
+                    ),
+                    (
+                        text: "Well, good luck with that.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                    (
+                        text: "Neither do I.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "rejected-recruit",
+                line: "Oh, okay. Sorry to brother you.",
+                sprite: None,
+                choices: [
+                    (
+                        text: "",
+                        when: Always,
+                        actions: [
+                            SetFlag("rejected-recruit"),
+                        ],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "met-start",
+                line: "Oh, hello again.",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Where did you say you were going again?",
+                        when: Always,
+                        actions: [],
+                        next: Some("wander"),
+                    ),
+                    (
+                        text: "Goodbye.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                    (
+                        text: "Piss off, kid.",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(-20),
+                            SetFlag("pissed-off"),
+                        ],
+                        next: None,
+                    ),
+                ],
+            ),
+            (
+                key: "pissed-off",
+                line: "What do you want?",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Someone needs to teach you some manners.",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(-10),
+                        ],
+                        next: None,
+                    ),
+                    (
+                        text: "Nothing you\'ve got.",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(-5),
+                        ],
+                        next: None,
+                    ),
+                    (
+                        text: "Sorry for telling you to piss off",
+                        when: Attitude(AtLeast(45)),
+                        actions: [
+                            ChangeAttitude(5),
+                            ClearFlag("pissed-off"),
+                        ],
+                        next: Some("wind-down"),
+                    ),
+                ],
+            ),
+            (
+                key: "met-rejected-start",
+                line: "Oh, hello again.",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Hello, again. I\'ve been thinking, and you can join me if you like",
+                        when: Always,
+                        actions: [
+                            ChangeAttitude(5),
+                            Recruit,
+                        ],
+                        next: Some("recruited"),
+                    ),
+                    (
+                        text: "Goodbye.",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                    (
+                        text: "Where did you say you were headed again?",
+                        when: Always,
+                        actions: [],
+                        next: Some("wander"),
+                    ),
+                ],
+            ),
+        ],
+    )),
+    sprites: [],
+)
