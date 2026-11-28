@@ -196,8 +196,18 @@ impl EditorState {
             .collect()
     }
 
+    /// Every key a new person must avoid: the list, and the stems of set
+    /// aside files, which are still in `data/people/`.
     fn all_keys(&self) -> Vec<&str> {
-        self.people.iter().map(|file| file.key.as_str()).collect()
+        self.people
+            .iter()
+            .map(|file| file.key.as_str())
+            .chain(self.broken.iter().map(|(stem, _)| stem.as_str()))
+            .collect()
+    }
+
+    fn set_aside_stems(&self) -> Vec<&str> {
+        self.broken.iter().map(|(stem, _)| stem.as_str()).collect()
     }
 
     /// True when the person at `index` should be marked: from the main
@@ -229,6 +239,7 @@ impl EditorState {
             &self.disk,
             &self.people[index],
             &self.keys_except(index),
+            &self.set_aside_stems(),
         );
         self.has_error = !found.errors.is_empty();
         self.problems = found
@@ -301,6 +312,7 @@ impl EditorState {
         // An edit made this frame may not have been checked yet.
         self.refresh_problems();
         if self.has_error {
+            self.status = "Not saved: fix the errors listed under Problems.".to_string();
             return;
         }
         let file = &self.people[index];
@@ -661,7 +673,6 @@ mod tests {
         assert!(state.status.contains("first_leg.ron is now shadowed"));
         assert!(!state.is_unsaved_main_person(at));
         assert!(!state.edited[at]);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -680,7 +691,6 @@ mod tests {
 
         assert!(state.has_error);
         assert!(!person_path(&dir, "jonnoj").exists());
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -701,7 +711,6 @@ mod tests {
         assert_eq!(state.people[at], original);
         assert!(state.is_unsaved_main_person(at));
         assert!(state.status.contains("back in the list"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -714,7 +723,6 @@ mod tests {
         state.delete();
         assert_eq!(state.people.len(), count);
         assert!(state.status.contains("nothing to delete"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -738,7 +746,6 @@ mod tests {
         state.delete();
         assert_eq!(state.people.len(), count);
         assert_eq!(state.selected, Some(count - 1));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -761,7 +768,6 @@ mod tests {
             state.status
         );
         assert!(!state.status.contains("shadowed"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -777,7 +783,6 @@ mod tests {
         assert!(person_path(&dir, "jonnoj-two").exists());
         assert!(person_path(&dir, "jonnoj").exists());
         assert!(state.status.contains("still in data/people/"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -792,14 +797,43 @@ mod tests {
         assert_eq!(state.broken[0].0, "broken");
         assert_eq!(state.people.len(), plain);
         assert!(state.status.contains("do not load"));
-        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn new_and_duplicate_skip_a_set_aside_file_and_save_refuses_its_key() {
+        let dir = scratch_dir();
+        fs::create_dir_all(logic::people_dir(&dir)).unwrap();
+        let new_path = person_path(&dir, "new-npc");
+        let copy_path = person_path(&dir, "jonnoj-copy");
+        fs::write(&new_path, "not ron").unwrap();
+        fs::write(&copy_path, "not ron either").unwrap();
+        let mut state = state_in(&dir);
+        assert_eq!(state.broken.len(), 2);
+
+        state.new_person("yhlgrym", Some("gate"));
+        assert_eq!(state.people[state.selected.unwrap()].key, "new-npc-2");
+
+        let at = index_of(&state, "jonnoj");
+        state.select(Some(at));
+        state.duplicate();
+        assert_eq!(state.people[state.selected.unwrap()].key, "jonnoj-copy-2");
+
+        // Typing a set-aside stem into the key is refused and touches nothing.
+        let chosen = state.selected.unwrap();
+        state.people[chosen].key = "jonnoj-copy".to_string();
+        state.dirty = true;
+        state.save();
+        assert!(state.has_error);
+        assert!(state.problems.iter().any(|p| p.contains("jonnoj-copy.ron")));
+        assert!(state.status.contains("Not saved"));
+        assert_eq!(fs::read_to_string(&copy_path).unwrap(), "not ron either");
+        assert_eq!(fs::read_to_string(&new_path).unwrap(), "not ron");
     }
 
     #[test]
     fn a_broken_main_file_is_an_error() {
         let dir = scratch_dir();
-        assert!(EditorState::from_parts("nonsense".to_string(), dir.clone()).is_err());
-        let _ = fs::remove_dir_all(&dir);
+        assert!(EditorState::from_parts("nonsense".to_string(), dir.to_path_buf()).is_err());
     }
 
     #[test]
@@ -810,6 +844,5 @@ mod tests {
         fs::write(logic::people_dir(&dir), "not a folder").unwrap();
         let error = state.reload_disk().unwrap_err();
         assert!(error.contains("Could not re-read"));
-        let _ = fs::remove_dir_all(&dir);
     }
 }

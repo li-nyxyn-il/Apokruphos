@@ -155,12 +155,15 @@ pub fn read_disk(data_dir: &Path, main: &str) -> io::Result<SplitFiles> {
 }
 
 /// Checks one person the way a load would, and adds the warnings a load
-/// does not raise. `other_keys` are the keys of everyone else in the list.
+/// does not raise. `other_keys` are the keys of everyone else in the list,
+/// and `set_aside` are the stems of people files that do not load, which a
+/// save must not overwrite.
 pub fn find_problems(
     main: &str,
     disk: &[(String, String)],
     file: &PersonFile,
     other_keys: &[&str],
+    set_aside: &[&str],
 ) -> Problems {
     let mut problems = Problems::default();
     if let Some(message) = key_problem(&file.key) {
@@ -170,6 +173,12 @@ pub fn find_problems(
     if other_keys.contains(&file.key.as_str()) {
         problems.errors.push(format!(
             "Another person in the list already has the key \"{}\".",
+            file.key
+        ));
+    }
+    if set_aside.contains(&file.key.as_str()) {
+        problems.errors.push(format!(
+            "data/people/{}.ron is set aside because it does not load, and saving would overwrite it. Use another key or fix that file.",
             file.key
         ));
     }
@@ -215,9 +224,28 @@ pub fn delete_person(data_dir: &Path, key: &str) -> io::Result<bool> {
 #[cfg(test)]
 pub const TEST_MAIN: &str = include_str!("../../../../data/first_leg.ron");
 
-/// A fresh empty folder under the system temp dir, for tests.
+/// A fresh empty folder under the system temp dir, removed when dropped
+/// so a failing test does not leave it behind.
 #[cfg(test)]
-pub fn scratch_dir() -> PathBuf {
+pub struct ScratchDir(PathBuf);
+
+#[cfg(test)]
+impl std::ops::Deref for ScratchDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+pub fn scratch_dir() -> ScratchDir {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -225,9 +253,8 @@ pub fn scratch_dir() -> PathBuf {
         std::process::id(),
         NEXT.fetch_add(1, Ordering::SeqCst)
     ));
-    let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    dir
+    ScratchDir(dir)
 }
 
 #[cfg(test)]
@@ -308,7 +335,7 @@ mod tests {
     #[test]
     fn a_blank_person_has_no_problems() {
         let file = blank_at_start(NEW_KEY);
-        let problems = find_problems(MAIN, &[], &file, &[]);
+        let problems = find_problems(MAIN, &[], &file, &[], &[]);
         assert_eq!(problems, Problems::default());
         let sheet = file.sheet.unwrap();
         assert_eq!(sheet.age, 30);
@@ -318,18 +345,18 @@ mod tests {
     #[test]
     fn an_untouched_main_file_person_has_no_problems() {
         let file = person_from_main(MAIN, "jonnoj").unwrap();
-        let problems = find_problems(MAIN, &[], &file, &[]);
+        let problems = find_problems(MAIN, &[], &file, &[], &[]);
         assert!(problems.errors.is_empty(), "{:?}", problems.errors);
     }
 
     #[test]
     fn problems_report_an_unknown_place_and_a_taken_key() {
         let mut file = blank_person(NEW_KEY, "nowhere", None);
-        let problems = find_problems(MAIN, &[], &file, &[]);
+        let problems = find_problems(MAIN, &[], &file, &[], &[]);
         assert_eq!(problems.errors.len(), 1, "{:?}", problems.errors);
 
         file = blank_at_start(NEW_KEY);
-        let problems = find_problems(MAIN, &[], &file, &[NEW_KEY]);
+        let problems = find_problems(MAIN, &[], &file, &[NEW_KEY], &[]);
         assert_eq!(problems.errors.len(), 1, "{:?}", problems.errors);
         assert!(problems.errors[0].contains("already has the key"));
     }
@@ -337,7 +364,7 @@ mod tests {
     #[test]
     fn problems_report_a_bad_key_without_checking_further() {
         let file = blank_at_start("Bad Key");
-        let problems = find_problems(MAIN, &[], &file, &[]);
+        let problems = find_problems(MAIN, &[], &file, &[], &[]);
         assert_eq!(problems.errors.len(), 1);
     }
 
@@ -359,7 +386,6 @@ mod tests {
         assert!(delete_person(&dir, "test-writer").unwrap());
         assert!(!path.exists());
         assert!(!delete_person(&dir, "test-writer").unwrap());
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -372,7 +398,6 @@ mod tests {
         assert_eq!(good[0].0, "fine");
         assert_eq!(broken.len(), 1);
         assert_eq!(broken[0].0, "broken");
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -382,6 +407,5 @@ mod tests {
         file.key = "../escape".to_string();
         assert!(write_person(&dir, &file).is_err());
         assert!(delete_person(&dir, "../escape").is_err());
-        let _ = fs::remove_dir_all(&dir);
     }
 }
