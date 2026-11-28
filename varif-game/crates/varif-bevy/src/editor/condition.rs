@@ -127,7 +127,7 @@ pub fn switch_variant(old: Condition, to: usize) -> Condition {
         1 => Condition::All(children),
         2 => Condition::Any(children),
         3 => Condition::Not(Box::new(children.into_iter().next().unwrap_or_default())),
-        4 | 5 | 6 => {
+        4..=6 => {
             let cmp = cmp.unwrap_or(Compare::AtLeast(50));
             match to {
                 4 => Condition::Attitude(cmp),

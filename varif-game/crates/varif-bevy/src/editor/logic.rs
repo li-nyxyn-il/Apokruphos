@@ -126,13 +126,13 @@ pub fn people_from(main: &str, disk: &[(String, String)]) -> Result<Vec<PersonFi
         .collect())
 }
 
+/// A people file's name with its text, or with its error.
+pub type Named = (String, String);
+
 /// Splits the people files into those that load alongside the main file
 /// and those that do not, with the load error for each of the latter. One
 /// bad file therefore cannot stop the rest from being edited.
-pub fn split_people_files(
-    main: &str,
-    files: Vec<(String, String)>,
-) -> (Vec<(String, String)>, Vec<(String, String)>) {
+pub fn split_people_files(main: &str, files: Vec<Named>) -> (Vec<Named>, Vec<Named>) {
     let mut good: Vec<(String, String)> = Vec::new();
     let mut broken = Vec::new();
     for file in files {

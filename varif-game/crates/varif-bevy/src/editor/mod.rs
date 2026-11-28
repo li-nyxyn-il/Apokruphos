@@ -15,6 +15,7 @@ mod location;
 mod logic;
 mod sheet;
 mod sprites;
+mod test_pane;
 mod widgets;
 
 use bevy::prelude::*;
@@ -65,12 +66,15 @@ impl Tab {
     }
 }
 
+/// A place's key and name, with its sites' keys and names.
+pub type PlaceInfo = (String, String, Vec<(String, String)>);
+
 /// What the tabs need to know about the world, built once from the loaded
 /// data file.
 #[derive(Resource, Clone, Debug)]
 pub struct EditorContext {
     /// Each place's key and name, with its sites' keys and names.
-    pub places: Vec<(String, String, Vec<(String, String)>)>,
+    pub places: Vec<PlaceInfo>,
     /// The live hostility table, for showing how factions stand.
     pub hostility: Hostility,
 }
@@ -599,6 +603,8 @@ fn central_panel(
         tab,
         dirty,
         edited,
+        main_text,
+        disk,
         ..
     } = state;
     let Some(index) = *selected else {
@@ -607,6 +613,12 @@ fn central_panel(
     };
     let file = &mut people[index];
     let before = file.clone();
+
+    if *tab == Tab::Dialogue {
+        egui::Panel::right("test_pane")
+            .default_size(320.0)
+            .show(ui, |ui| test_pane::ui(ui, file, main_text, disk));
+    }
 
     egui::Grid::new("person_header")
         .num_columns(2)

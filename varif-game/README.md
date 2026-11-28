@@ -44,9 +44,12 @@ trunk serve --address 0.0.0.0    # http://localhost:8080, or this computer's add
 | `crates/varif-gui` | The window, built on egui (the `varif-gui` program) |
 | `crates/varif-bevy` | A Bevy front end (the `varif-bevy` program); run with `cargo bevy` |
 | `crates/varif-gui/index.html` | The page the web build runs in |
+| `crates/varif-bevy/src/editor/` | The NPC editor, run with `cargo bevy -- --edit` |
 | `data/first_leg.ron` | The first leg of the Pylgrymage, Yhlgrym to Atzhaim, as data |
+| `data/people/` | One file per person made or edited in the NPC editor, `<key>.ron` |
 | `data/map_layout.ron` | Where each place is drawn on the window's map, in pixels of the Umbara map |
 | `data/umbara_roads_only.png` | The Umbara roads-only map, built into the window as the map's background |
+| `assets/sprites/` | The images an NPC can be shown with, picked in the editor's Sprites tab |
 
 Inside `varif-core/src`:
 
@@ -61,6 +64,31 @@ Inside `varif-core/src`:
 | `rng.rs` | The seeded random number generator |
 | `sky.rs` | The night sky: four Akstada and ten minor constellations a night, turned at noon |
 | `ids.rs` | `PlaceId` and `PersonId` |
+| `dialogue.rs` | Dialogue trees: entries, nodes and choices, with their `Condition`s and `Action`s |
+| `sandbox.rs` | A world to try one person's conversation in, for the editor's test pane |
+
+## Editing NPCs
+
+The Bevy front end has an editor for people and their conversations:
+
+```
+cargo bevy -- --edit                    # edit the people in data/first_leg.ron
+cargo bevy -- --edit path/to/data.ron   # or another data file
+```
+
+Plain `cargo bevy` is still the game. The editor lists everyone on the left, with New, Duplicate and Delete, and the selected person's problems under the list. Its tabs are Sheet, Inventory, Location (with the schedule), Factions, Sprites and Dialogue. Save is refused while the person has an error.
+
+**Where files go.** Save writes one file per person, `data/people/<key>.ron`, beside the data file. The editor never writes `data/first_leg.ron`, so its comments stay. A people file replaces the person with the same key in `first_leg.ron`: to change someone who is already there, such as Jonnoj, open them, edit, and save. The editor then says the copy in `first_leg.ron` is shadowed, and you can delete it by hand. Two files with the same key, or a file whose name is not its key, is a load error. The command-line program, the window and the Bevy game all read `data/people/`, and the web build embeds it.
+
+**Sprites.** Put images in `assets/sprites/`. In the Sprites tab, give each sprite a name ("portrait", "token", "hostile"), pick its file, and set a frame grid if the image is a sheet. A dialogue node can name one of these to be shown while it is on screen. The game does not draw them yet.
+
+**Dialogue.** A tree has entries, which pick the node a conversation opens at (the first whose condition holds), and nodes, each with the NPC's line and the player's choices. A choice has a condition, a list of actions, and a next node, or none to end the conversation. A node nothing leads to is a warning.
+
+Conditions: Always, All, Any, Not, Attitude, Hostility, Friendliness, Bucket, FactionHostility, IsFollower, InParty, Recruitable, PlayerHas, NpcHas, Flag, HourBetween and PartyAtSite.
+
+Actions: ChangeAttitude, SetAttitude, ChangeHostility, GiveItem, TakeItem, GrantItem, Recruit, SetRecruitable, SetFlag, ClearFlag, WriteJournal and StartCombat (a placeholder until combat exists).
+
+**Test pane.** On the Dialogue tab, the panel on the right runs the person's conversation in a scratch world. Set their attitude, their faction's hostility, the hour, whether they follow the party and which flags are set (separated by commas or new lines), then press Start. Their line shows with the player's choices as buttons, and a log below lists what each choice did; an error, such as them having nothing to say, shows in red. Restart begins again. Edits to the tree do not carry over by themselves: the pane says "Restart to pick up edits". Testing never changes the people in the editor or any file.
 
 ## How it works
 

@@ -277,16 +277,12 @@ pub fn ui(ui: &mut egui::Ui, file: &mut PersonFile, context: &EditorContext) {
             match selected.and_then(|key| tree.nodes.iter().position(|n| n.key == key)) {
                 Some(at) => {
                     let fallout = fallout_of_delete(tree, &tree.nodes[at].key);
-                    node_editor(
-                        ui,
-                        &mut tree.nodes[at],
-                        &keys,
-                        &sprites,
-                        &cctx,
-                        &mut state,
-                        fallout,
-                        &mut ops,
-                    );
+                    let node = &mut tree.nodes[at];
+                    ui.push_id(node.key.clone(), |ui| {
+                        node_editor(
+                            ui, node, &keys, &sprites, &cctx, &mut state, fallout, &mut ops,
+                        );
+                    });
                 }
                 None => {
                     ui.weak("Pick a node on the left, or add one.");
