@@ -94,8 +94,9 @@ fn main() {
 
     const WEB_DATA: &str = include_str!("../../../data/first_leg.ron");
     const WEB_LAYOUT: &str = include_str!("../../../data/map_layout.ron");
-    // The people files in data/people, embedded by build.rs.
-    include!(concat!(env!("OUT_DIR"), "/people.rs"));
+    // The people files in data/people, embedded by build.rs as a slice
+    // expression.
+    const PEOPLE: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/people.rs"));
 
     // Panics show up in the browser's console instead of vanishing.
     std::panic::set_hook(Box::new(|info| {
