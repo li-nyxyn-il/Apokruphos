@@ -363,7 +363,7 @@ pub enum Event {
         person: PersonId,
         standing: Standing,
         /// What the NPC says first: the line of the entry node of their
-        /// dialogue tree. Blank for flat lines.
+        /// dialogue tree. Blank for a default tree.
         opening: String,
     },
     /// The player said a line, and the NPC answered with `reply`, which may be
@@ -739,22 +739,18 @@ impl World {
                 friendliness: standing.friendliness,
             }]);
         }
-        let (node, opening) = match &person.tree {
-            None => (None, String::new()),
-            Some(tree) => {
-                let entry = tree
-                    .entries
-                    .iter()
-                    .find(|entry| entry.when.holds(self, id))
-                    .ok_or(CommandError::NothingToSay)?;
-                let node = tree
-                    .node(&entry.node)
-                    .ok_or_else(|| missing_node(&entry.node))?;
-                (Some(node.key.clone()), node.line.clone())
-            }
-        };
+        let tree = self.tree_of(id).ok_or(CommandError::UnknownPerson(id))?;
+        let entry = tree
+            .entries
+            .iter()
+            .find(|entry| entry.when.holds(self, id))
+            .ok_or(CommandError::NothingToSay)?;
+        let node = tree
+            .node(&entry.node)
+            .ok_or_else(|| missing_node(&entry.node))?;
+        let opening = node.line.clone();
         self.conversation = Some(id);
-        self.conversation_node = node;
+        self.conversation_node = Some(node.key.clone());
         Ok(vec![Event::ConversationOpened {
             person: id,
             standing,
@@ -764,19 +760,10 @@ impl World {
 
     fn say(&mut self, line: usize) -> Result<Vec<Event>, CommandError> {
         let person = self.conversation.ok_or(CommandError::NotInConversation)?;
-        if let Some(tree) = self.person(person).and_then(|p| p.tree.clone()) {
-            return self.say_from_tree(person, &tree, line);
-        }
-        let said = self
-            .open_lines(person)
-            .get(line)
-            .map(|said| (said.text.clone(), said.reply.clone()))
-            .ok_or(CommandError::UnknownLine(line))?;
-        Ok(vec![Event::Said {
-            person,
-            text: said.0,
-            reply: said.1,
-        }])
+        let tree = self
+            .tree_of(person)
+            .ok_or(CommandError::UnknownPerson(person))?;
+        self.say_from_tree(person, &tree, line)
     }
 
     /// Runs the `line`-th offered choice of `tree`: its actions, then on to
@@ -790,7 +777,7 @@ impl World {
         let choice = self
             .offered_choices(person)
             .get(line)
-            .map(|choice| (*choice).clone())
+            .cloned()
             .ok_or(CommandError::UnknownLine(line))?;
         let next = match &choice.next {
             Some(key) => Some(tree.node(key).ok_or_else(|| missing_node(key))?),

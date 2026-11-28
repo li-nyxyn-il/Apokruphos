@@ -5,7 +5,7 @@
     at: "heedhaim",
     site: None,
     in_party: false,
-    recruitable: true,
+    recruitable: false,
     sheet: Some((
         role: Npc(
             follower: false,
@@ -26,7 +26,7 @@
             Vinhili,
         ],
         background: "A Shentzlian boy exploring the world",
-        primary: Bandit,
+        primary: Audsen,
         secondary: [],
         level: 1,
         inventory: [],
@@ -48,13 +48,6 @@
         entries: [
             (
                 when: All([
-                    Flag("met"),
-                    Not(Flag("pissed-off")),
-                ]),
-                node: "start",
-            ),
-            (
-                when: All([
                     Flag("rejected-recruit"),
                 ]),
                 node: "met-rejected-start",
@@ -71,6 +64,10 @@
                     Flag("pissed-off"),
                 ]),
                 node: "pissed-off",
+            ),
+            (
+                when: Always,
+                node: "start",
             ),
         ],
         nodes: [

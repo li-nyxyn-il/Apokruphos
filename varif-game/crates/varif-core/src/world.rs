@@ -2,7 +2,9 @@
 
 use crate::calendar::{Date, DAYS_PER_YEAR, HOURS_PER_DAY, MINUTES_PER_DAY, MINUTES_PER_HOUR};
 use crate::character::Character;
-use crate::dialogue::{Action, Choice, DialogueTree, Sprite};
+use crate::dialogue::{
+    default_tree, Action, Choice, Condition, DialogueTree, Sprite, DEFAULT_START,
+};
 use crate::faction::{FactionId, Hostility};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::{DialogueLine, Standing};
@@ -221,7 +223,8 @@ pub struct Person {
     /// anyone forward.
     #[serde(default)]
     pub schedule: Schedule,
-    /// A scripted conversation. Without one they say the flat bucket lines.
+    /// A scripted conversation. Without one they talk through
+    /// [`crate::default_tree`] of the general lines and their own.
     #[serde(default)]
     pub tree: Option<DialogueTree>,
     /// Named pictures the person can be shown with.
@@ -312,7 +315,8 @@ fn default_time_scale() -> u32 {
 pub struct DialogueOption {
     /// What the player says.
     pub text: String,
-    /// The name of the bucket a flat line belongs to. Empty for a tree choice.
+    /// The name of the bucket the choice is gated on, when it is gated on one
+    /// bucket alone. Empty otherwise.
     pub label: String,
 }
 
@@ -380,8 +384,9 @@ pub struct World {
     #[serde(default)]
     pub conversation: Option<PersonId>,
     /// The key of the node of the person's dialogue tree the conversation is
-    /// at. `None` when the conversation uses flat lines, or when there is no
-    /// conversation. Cleared whenever `conversation` is.
+    /// at. `None` when there is no conversation. A save from before every NPC
+    /// had a tree may hold `None` mid-conversation, which reads as
+    /// [`DEFAULT_START`]. Cleared whenever `conversation` is.
     #[serde(default)]
     pub conversation_node: Option<String>,
     /// Tonight's constellations. Drawn from the game's seed when the world is
@@ -617,24 +622,53 @@ impl World {
         Some(Standing::new(attitude, hostility, sheet.role.is_follower()))
     }
 
+    /// The tree the person talks through: their own, or else the
+    /// [`default_tree`] of the general lines and their own flat lines.
+    /// `None` for someone who isn't in the world.
+    pub fn tree_of(&self, id: PersonId) -> Option<DialogueTree> {
+        let person = self.person(id)?;
+        Some(match &person.tree {
+            Some(tree) => tree.clone(),
+            None => {
+                let lines: Vec<DialogueLine> = self
+                    .dialogue
+                    .iter()
+                    .chain(&person.dialogue)
+                    .cloned()
+                    .collect();
+                default_tree(&lines)
+            }
+        })
+    }
+
+    /// The key of the node the conversation is at.
+    fn current_node_key(&self) -> &str {
+        self.conversation_node.as_deref().unwrap_or(DEFAULT_START)
+    }
+
     /// The choices of the person's dialogue tree on offer now: those at the
     /// current node whose condition holds and whose item gifts and takings
-    /// can be paid. Empty unless the person is the one being talked to.
-    pub(crate) fn offered_choices(&self, id: PersonId) -> Vec<&Choice> {
-        if self.conversation != Some(id) {
+    /// can be paid. Outside a conversation with them, the choices at the node
+    /// a conversation would open at now, or none if no entry holds.
+    pub(crate) fn offered_choices(&self, id: PersonId) -> Vec<Choice> {
+        let Some(tree) = self.tree_of(id) else {
             return Vec::new();
-        }
-        let node = self
-            .person(id)
-            .and_then(|person| person.tree.as_ref())
-            .zip(self.conversation_node.as_deref())
-            .and_then(|(tree, key)| tree.node(key));
-        let Some(node) = node else {
+        };
+        let key = if self.conversation == Some(id) {
+            Some(self.current_node_key())
+        } else {
+            tree.entries
+                .iter()
+                .find(|entry| entry.when.holds(self, id))
+                .map(|entry| entry.node.as_str())
+        };
+        let Some(node) = key.and_then(|key| tree.node(key)) else {
             return Vec::new();
         };
         node.choices
             .iter()
             .filter(|choice| choice.when.holds(self, id) && self.can_pay(id, &choice.actions))
+            .cloned()
             .collect()
     }
 
@@ -676,53 +710,31 @@ impl World {
     }
 
     /// What the NPC says now: the line of the current node of their tree.
-    /// `None` for a flat-line conversation or when no one is talking.
-    pub fn npc_line(&self) -> Option<&str> {
+    /// `None` when no one is talking or the line is blank.
+    pub fn npc_line(&self) -> Option<String> {
         let id = self.conversation?;
-        let tree = self.person(id)?.tree.as_ref()?;
-        let node = tree.node(self.conversation_node.as_deref()?)?;
-        Some(node.line.as_str())
+        let tree = self.tree_of(id)?;
+        let line = tree.node(self.current_node_key())?.line.clone();
+        (!line.trim().is_empty()).then_some(line)
     }
 
-    /// What the player can say to an NPC right now. For an NPC with a
-    /// dialogue tree these are the choices on offer at the current node, in
-    /// order, with no label. Otherwise they are the general lines, then the
-    /// NPC's own, keeping only those whose bucket is open to them, each
-    /// labelled with its bucket.
+    /// What the player can say to an NPC right now: the choices on offer at
+    /// the current node of their tree, in order. A choice gated on one bucket
+    /// alone, as every line of a default tree is, is labelled with that
+    /// bucket's name. Any other has a blank label.
     pub fn dialogue_options(&self, id: PersonId) -> Vec<DialogueOption> {
-        let Some(person) = self.person(id).filter(|_| self.standing(id).is_some()) else {
+        if self.standing(id).is_none() {
             return Vec::new();
-        };
-        if person.tree.is_some() {
-            return self
-                .offered_choices(id)
-                .into_iter()
-                .map(|choice| DialogueOption {
-                    text: choice.text.clone(),
-                    label: String::new(),
-                })
-                .collect();
         }
-        self.open_lines(id)
+        self.offered_choices(id)
             .into_iter()
-            .map(|line| DialogueOption {
-                text: line.text.clone(),
-                label: line.bucket.name(),
+            .map(|choice| DialogueOption {
+                label: match choice.when {
+                    Condition::Bucket(bucket) => bucket.name(),
+                    _ => String::new(),
+                },
+                text: choice.text,
             })
-            .collect()
-    }
-
-    /// The flat lines open to the NPC: the general lines, then their own,
-    /// keeping only those whose bucket is open to them.
-    pub(crate) fn open_lines(&self, id: PersonId) -> Vec<&DialogueLine> {
-        let (Some(person), Some(standing)) = (self.person(id), self.standing(id)) else {
-            return Vec::new();
-        };
-        let open = standing.buckets();
-        self.dialogue
-            .iter()
-            .chain(&person.dialogue)
-            .filter(|line| open.contains(&line.bucket))
             .collect()
     }
 

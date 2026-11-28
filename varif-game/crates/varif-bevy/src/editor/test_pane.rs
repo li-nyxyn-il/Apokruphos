@@ -33,11 +33,14 @@ pub struct Session {
 impl Session {
     /// What the person says now, if a conversation is open.
     pub fn line(&self) -> Option<String> {
-        self.world.npc_line().map(str::to_string)
+        self.world.npc_line()
     }
 
-    /// The player's lines on offer now.
+    /// The player's lines on offer now. None once the conversation is over.
     pub fn options(&self) -> Vec<String> {
+        if self.world.conversation != Some(self.person) {
+            return Vec::new();
+        }
         self.world
             .dialogue_options(self.person)
             .into_iter()

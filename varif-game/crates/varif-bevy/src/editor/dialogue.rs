@@ -13,7 +13,8 @@ use super::{
 use bevy_egui::egui;
 use std::fmt;
 use varif_core::{
-    unreachable_nodes, Action, Choice, Condition, DialogueTree, Entry, Node, PersonFile,
+    default_tree, unreachable_nodes, Action, Choice, Condition, DialogueLine, DialogueTree,
+    Entry, Node, PersonFile,
 };
 
 /// The key of the first node of a new tree.
@@ -35,6 +36,19 @@ pub fn new_tree() -> DialogueTree {
             choices: Vec::new(),
         }],
     }
+}
+
+/// Gives `file` the default tree of the general lines and its own, as the
+/// game would use for them, and clears its own flat lines, which are now in
+/// the tree. A file with no lines at all gets [`new_tree`].
+pub fn tree_from_default(file: &mut PersonFile, general: &[DialogueLine]) {
+    let lines: Vec<DialogueLine> = general.iter().chain(&file.dialogue).cloned().collect();
+    file.tree = Some(if lines.is_empty() {
+        new_tree()
+    } else {
+        default_tree(&lines)
+    });
+    file.dialogue.clear();
 }
 
 /// `base` if no node has it, otherwise `base-2`, `base-3` and so on.
@@ -227,9 +241,12 @@ enum Op {
 
 pub fn ui(ui: &mut egui::Ui, file: &mut PersonFile, context: &EditorContext) {
     let Some(tree) = file.tree.as_mut() else {
-        ui.label("This person has no dialogue tree, so they use the general lines.");
-        if ui.button("Create tree").clicked() {
-            file.tree = Some(new_tree());
+        ui.label(
+            "This person has no dialogue tree of their own. They talk through a \
+             default one: a start node offering the general lines and their own.",
+        );
+        if ui.button("Create tree from the default").clicked() {
+            tree_from_default(file, &context.general);
         }
         return;
     };
@@ -762,6 +779,37 @@ mod tests {
     }
 
     #[test]
+    fn create_tree_from_the_default_converts_the_flat_lines() {
+        let mut hest = people_from(TEST_MAIN, &[])
+            .unwrap()
+            .into_iter()
+            .find(|p| p.key == "hest")
+            .unwrap();
+        let general = vec![DialogueLine {
+            bucket: varif_core::Bucket::Follower,
+            text: "General".to_string(),
+            reply: "Aye".to_string(),
+        }];
+        hest.dialogue = vec![DialogueLine {
+            bucket: varif_core::Bucket::Follower,
+            text: "Own".to_string(),
+            reply: String::new(),
+        }];
+        tree_from_default(&mut hest, &general);
+        assert!(hest.dialogue.is_empty(), "the flat lines moved into the tree");
+        let tree = hest.tree.as_ref().unwrap();
+        let start = tree.node("start").unwrap();
+        let texts: Vec<&str> = start.choices.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(texts, ["General", "Own"]);
+        check_person_file(TEST_MAIN, &[], &hest).expect("the converted tree loads");
+
+        let mut empty = hest.clone();
+        empty.tree = None;
+        tree_from_default(&mut empty, &[]);
+        assert_eq!(empty.tree, Some(new_tree()));
+    }
+
+    #[test]
     fn a_tree_built_with_the_ops_checks_and_plays_on_hest() {
         let mut hest = people_from(TEST_MAIN, &[])
             .unwrap()
@@ -796,7 +844,7 @@ mod tests {
         assert_eq!(options, ["I vouch for myself.", "Never mind."]);
         world.apply(Command::Say { line: 0 }).unwrap();
         assert!(world.flags.contains("met_hest"));
-        assert_eq!(world.npc_line(), Some("Pass, friend."));
+        assert_eq!(world.npc_line().as_deref(), Some("Pass, friend."));
         assert_eq!(world.standing(id).unwrap().attitude, 85);
         world.apply(Command::Say { line: 0 }).unwrap();
         assert_eq!(world.conversation, None, "Farewell ends it");
