@@ -521,6 +521,8 @@ pub enum CommandError {
     /// An action of a dialogue choice could not be carried out, so none of
     /// the choice took effect. Holds the reason.
     ActionFailed(String),
+    /// A dialogue tree names a node it does not have.
+    MissingNode(String),
     /// A wait was not from 1 to 24 hours.
     BadWait,
     /// A time scale was not from 1 to 60.
@@ -598,6 +600,9 @@ impl fmt::Display for CommandError {
             CommandError::NotInConversation => write!(f, "the player is not talking to anyone"),
             CommandError::UnknownLine(n) => write!(f, "there is no line {n} to say"),
             CommandError::NothingToSay => write!(f, "they have nothing to say to you"),
+            CommandError::MissingNode(key) => {
+                write!(f, "the dialogue has no node called \"{key}\"")
+            }
             CommandError::ActionFailed(why) => {
                 write!(f, "the choice could not be carried out: {why}")
             }
@@ -611,7 +616,7 @@ impl std::error::Error for CommandError {}
 
 /// The error for a dialogue tree that points at a node it does not have.
 fn missing_node(key: &str) -> CommandError {
-    CommandError::ActionFailed(format!("the dialogue has no node called \"{key}\""))
+    CommandError::MissingNode(key.to_string())
 }
 
 impl World {
@@ -849,6 +854,7 @@ impl World {
                     .clamp(i64::from(MIN_HOSTILITY), i64::from(MAX_HOSTILITY));
                 self.set_hostility(*from, *toward, index as u32)
             }
+            Action::GiveItem { count: 0, .. } | Action::TakeItem { count: 0, .. } => Ok(vec![]),
             Action::GiveItem { item, count } => {
                 let player = self.player_index()?;
                 self.move_item(npc.index(), player, item, *count)?;

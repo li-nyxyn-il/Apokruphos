@@ -588,3 +588,66 @@ fn flat_line_npc_still_talks() {
     assert!(!options.is_empty());
     assert!(options.iter().any(|o| o.label == "average friendliness"));
 }
+
+#[test]
+fn two_gives_summing_past_the_pack_hide_the_choice() {
+    let give = || Action::GiveItem {
+        item: "Seal".into(),
+        count: 1,
+    };
+    let (mut world, hest) = with_tree(one_choice(vec![give(), give()], None));
+    give_hest(&mut world, goods("Seal", 1));
+    world.apply(Command::Interact { person: hest }).unwrap();
+    assert!(world.dialogue_options(hest).is_empty());
+    give_hest(&mut world, goods("Seal", 1));
+    assert_eq!(world.dialogue_options(hest).len(), 1);
+}
+
+#[test]
+fn zero_count_gives_emit_nothing() {
+    let actions = vec![Action::GiveItem {
+        item: "Seal".into(),
+        count: 0,
+    }];
+    let (mut world, hest) = with_tree(one_choice(actions, None));
+    world.apply(Command::Interact { person: hest }).unwrap();
+    let events = world.apply(Command::Say { line: 0 }).unwrap();
+    assert!(!events.iter().any(|e| matches!(e, Event::ItemGiven { .. })));
+}
+
+#[test]
+fn dangling_nodes_are_missing_node_errors() {
+    let tree = DialogueTree {
+        entries: vec![entry(Condition::Always, "ghost")],
+        nodes: vec![],
+    };
+    let (mut world, hest) = with_tree(tree);
+    assert_eq!(
+        world.apply(Command::Interact { person: hest }),
+        Err(CommandError::MissingNode("ghost".into()))
+    );
+    assert_eq!(world.conversation, None);
+
+    let (mut world, hest) = with_tree(one_choice(vec![], Some("ghost")));
+    world.apply(Command::Interact { person: hest }).unwrap();
+    assert_eq!(
+        world.apply(Command::Say { line: 0 }),
+        Err(CommandError::MissingNode("ghost".into()))
+    );
+    assert_eq!(world.conversation_node.as_deref(), Some("start"));
+}
+
+#[test]
+fn tree_npc_too_hostile_still_will_not_talk() {
+    let (mut world, hest) = with_tree(one_choice(vec![], None));
+    world
+        .apply(Command::SetHostility {
+            from: FactionId::Ecumenci,
+            toward: FactionId::Player,
+            index: 0,
+        })
+        .unwrap();
+    let events = world.apply(Command::Interact { person: hest }).unwrap();
+    assert!(matches!(events[..], [Event::TooHostileToTalk { .. }]));
+    assert_eq!(world.conversation, None);
+}

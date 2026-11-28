@@ -638,8 +638,8 @@ impl World {
             .collect()
     }
 
-    /// Whether every `GiveItem` and `TakeItem` among `actions` finds enough
-    /// of the item in the pack it comes from.
+    /// Whether the `GiveItem` and `TakeItem` actions together find enough of
+    /// each item in the pack it comes from.
     fn can_pay(&self, npc: PersonId, actions: &[Action]) -> bool {
         let player = self.player().and_then(|p| p.sheet.as_ref());
         let npc = self.person(npc).and_then(|p| p.sheet.as_ref());
@@ -652,11 +652,27 @@ impl World {
                     .fold(0u32, |sum, item| sum.saturating_add(item.count))
             })
         };
-        actions.iter().all(|action| match action {
-            Action::GiveItem { item, count } => held(npc, item) >= *count,
-            Action::TakeItem { item, count } => held(player, item) >= *count,
-            _ => true,
-        })
+        // Total what the whole choice asks of each pack, so two small gifts
+        // of one item are not each judged on their own.
+        let mut from_npc: Vec<(&str, u32)> = Vec::new();
+        let mut from_player: Vec<(&str, u32)> = Vec::new();
+        for action in actions {
+            let (needs, item, count) = match action {
+                Action::GiveItem { item, count } => (&mut from_npc, item, *count),
+                Action::TakeItem { item, count } => (&mut from_player, item, *count),
+                _ => continue,
+            };
+            match needs.iter_mut().find(|(name, _)| name == item) {
+                Some((_, total)) => *total = total.saturating_add(count),
+                None => needs.push((item, count)),
+            }
+        }
+        from_npc
+            .iter()
+            .all(|(name, total)| held(npc, name) >= *total)
+            && from_player
+                .iter()
+                .all(|(name, total)| held(player, name) >= *total)
     }
 
     /// What the NPC says now: the line of the current node of their tree.
