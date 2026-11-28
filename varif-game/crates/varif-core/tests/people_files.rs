@@ -227,3 +227,66 @@ fn read_people_dir_reads_ron_files_sorted() {
         ]
     );
 }
+
+fn first_leg_file(key: &str) -> PersonFile {
+    let world = load_world(FIRST_LEG).unwrap();
+    person_file_of(&world, PersonId(index_of(&world, key) as u32))
+}
+
+#[test]
+fn sandbox_person_without_a_site_is_still_nearby() {
+    let mut file = first_leg_file("hest");
+    file.tree = Some(gated_tree());
+    file.site = None;
+    file.in_party = true; // an unrelated `at` and in_party must not matter
+    let (mut world, hest) = sandbox(FIRST_LEG, &[], &file, &setup(60, false)).unwrap();
+    assert!(!world.people[hest.index()].in_party);
+    assert!(world.nearby_npcs().contains(&hest));
+    world.apply(Command::Interact { person: hest }).unwrap();
+}
+
+#[test]
+fn sandbox_moves_the_party_to_the_person() {
+    let mut file = first_leg_file("hest");
+    file.tree = Some(gated_tree());
+    file.in_party = true;
+    let (world, hest) = sandbox(FIRST_LEG, &[], &file, &setup(60, true)).unwrap();
+    let yhlgrym = world.find_place("yhlgrym").unwrap();
+    assert_eq!(world.party_at, yhlgrym);
+    assert_eq!(world.people[hest.index()].at, yhlgrym);
+    assert!(world.nearby_npcs().contains(&hest));
+}
+
+#[test]
+fn sandbox_applies_the_whole_setup() {
+    use varif_core::{FactionId, Role, TimeMode};
+    let mut file = first_leg_file("hest");
+    file.tree = Some(gated_tree());
+    let (world, hest) = sandbox(FIRST_LEG, &[], &file, &setup(42, true)).unwrap();
+    let sheet = world.people[hest.index()].sheet.as_ref().unwrap();
+    assert_eq!(
+        sheet.role,
+        Role::Npc {
+            follower: true,
+            attitude: 42
+        }
+    );
+    assert!(sheet.belongs_to(FactionId::Player));
+    assert_eq!(world.hostility_toward(sheet.primary, FactionId::Player), 80);
+    assert_eq!(world.time_mode, TimeMode::TurnBased);
+    assert!(world.journey.is_none() && !world.camped);
+    assert!(world.conversation.is_none());
+}
+
+#[test]
+fn sandbox_leaves_the_players_own_hostility_alone() {
+    use varif_core::FactionId;
+    let mut file = first_leg_file("hest");
+    file.tree = Some(gated_tree());
+    file.sheet.as_mut().unwrap().primary = FactionId::Player;
+    let (world, _) = sandbox(FIRST_LEG, &[], &file, &setup(50, false)).unwrap();
+    assert_eq!(
+        world.hostility_toward(FactionId::Player, FactionId::Player),
+        100
+    );
+}

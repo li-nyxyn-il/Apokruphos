@@ -35,6 +35,12 @@ pub struct SandboxSetup {
 /// The party stands at the person's place and site. They are in the party
 /// only when `setup.follower` says so, and then carry the Player faction.
 /// The clock runs by turns, so nothing moves while the editor looks.
+///
+/// The party is moved to the person's own `at` and site, whatever the file
+/// says about `in_party`: the point is to stand the party beside them. A
+/// non-follower with no site of their own is given the place's gate, and the
+/// party stands there too, so they are always nearby. A sheet whose role is
+/// the player's is left as it is, and `Interact` then answers `NotAnNpc`.
 pub fn sandbox(
     main: &str,
     people: &[(String, String)],
@@ -64,15 +70,20 @@ pub fn sandbox(
         .site
         .as_deref()
         .and_then(|key| world.places[place.index()].find_site(key));
+    let gate = world.places[place.index()].gate_for(None);
     world.party_at = place;
-    world.party_site = own_site.or_else(|| world.places[place.index()].gate_for(None));
+    world.party_site = own_site.or(gate);
     for person in world.people.iter_mut().filter(|p| p.in_party) {
         person.at = place;
     }
     let person = &mut world.people[index];
     person.at = place;
     person.in_party = setup.follower;
-    person.site = if setup.follower { None } else { own_site };
+    person.site = if setup.follower {
+        None
+    } else {
+        own_site.or(gate)
+    };
     if let Some(sheet) = &mut person.sheet {
         if matches!(sheet.role, Role::Npc { .. }) {
             sheet.role = Role::Npc {
