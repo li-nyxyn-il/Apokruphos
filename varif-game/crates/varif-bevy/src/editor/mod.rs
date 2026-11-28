@@ -11,6 +11,7 @@ mod inventory;
 mod location;
 mod logic;
 mod sheet;
+mod sprites;
 mod widgets;
 
 use bevy::prelude::*;
@@ -20,6 +21,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use varif_core::{load_world_with_people, Hostility, PersonFile};
+
+pub use sprites::SpritePreviews;
 
 use logic::{
     blank_person, copy_key, delete_person, find_problems, is_saved, people_from, person_from_main,
@@ -391,7 +394,8 @@ pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_camera)
+        app.insert_resource(SpritePreviews::scanned())
+            .add_systems(Startup, spawn_camera)
             .add_systems(EguiPrimaryContextPass, editor_ui);
     }
 }
@@ -417,8 +421,14 @@ fn editor_ui(
     mut contexts: EguiContexts,
     mut state: ResMut<EditorState>,
     context: Res<EditorContext>,
+    mut previews: ResMut<SpritePreviews>,
+    server: Res<AssetServer>,
+    images: Res<Assets<Image>>,
 ) -> Result {
     let egui_ctx = contexts.ctx_mut()?.clone();
+    sprites::update_previews(&mut previews, &server, &images, |handle| {
+        contexts.add_image(bevy_egui::EguiTextureHandle::Strong(handle))
+    });
     let state = &mut *state;
     state.refresh_problems();
 
@@ -441,7 +451,9 @@ fn editor_ui(
             &state.status
         });
     });
-    egui::CentralPanel::default().show(&mut root, |ui| central_panel(ui, state, &context));
+    egui::CentralPanel::default().show(&mut root, |ui| {
+        central_panel(ui, state, &context, &mut previews)
+    });
 
     if state.confirm_delete {
         if let Some(index) = state.selected {
@@ -572,7 +584,12 @@ fn people_panel(ui: &mut egui::Ui, state: &EditorState, actions: &mut Vec<Action
         });
 }
 
-fn central_panel(ui: &mut egui::Ui, state: &mut EditorState, context: &EditorContext) {
+fn central_panel(
+    ui: &mut egui::Ui,
+    state: &mut EditorState,
+    context: &EditorContext,
+    previews: &mut SpritePreviews,
+) {
     let EditorState {
         people,
         selected,
@@ -610,7 +627,7 @@ fn central_panel(ui: &mut egui::Ui, state: &mut EditorState, context: &EditorCon
     ui.separator();
     egui::ScrollArea::vertical()
         .id_salt("tab_body")
-        .show(ui, |ui| tab_ui(*tab, ui, file, context));
+        .show(ui, |ui| tab_ui(*tab, ui, file, context, previews));
 
     if *file != before {
         edited[index] = true;
@@ -619,13 +636,20 @@ fn central_panel(ui: &mut egui::Ui, state: &mut EditorState, context: &EditorCon
 }
 
 /// Draws the body of one tab. Tabs not built yet say so.
-fn tab_ui(tab: Tab, ui: &mut egui::Ui, file: &mut PersonFile, context: &EditorContext) {
+fn tab_ui(
+    tab: Tab,
+    ui: &mut egui::Ui,
+    file: &mut PersonFile,
+    context: &EditorContext,
+    previews: &mut SpritePreviews,
+) {
     match tab {
         Tab::Sheet => sheet::ui(ui, file, context),
         Tab::Inventory => inventory::ui(ui, file, context),
         Tab::Location => location::ui(ui, file, context),
         Tab::Factions => factions::ui(ui, file, context),
-        Tab::Sprites | Tab::Dialogue => {
+        Tab::Sprites => sprites::ui(ui, file, previews),
+        Tab::Dialogue => {
             ui.label("Coming in a later task");
         }
     }
