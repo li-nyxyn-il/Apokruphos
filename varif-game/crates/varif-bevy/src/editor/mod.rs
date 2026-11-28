@@ -79,11 +79,16 @@ pub struct EditorContext {
     pub hostility: Hostility,
 }
 
+/// The data file's name when the editor is built from text, not a path.
+const DEFAULT_DATA_FILE: &str = "first_leg.ron";
+
 /// Everything the editor is holding.
 #[derive(Resource)]
 pub struct EditorState {
     /// The text of the main data file, which every check loads against.
     pub main_text: String,
+    /// The main data file's name, for messages.
+    pub data_file: String,
     /// The folder the data file is in. People are saved to `people/` in it.
     pub data_dir: PathBuf,
     /// Everyone in the list, with their unsaved edits.
@@ -128,8 +133,12 @@ impl EditorState {
             .map(Path::to_path_buf)
             .filter(|dir| !dir.as_os_str().is_empty())
             .unwrap_or_else(|| PathBuf::from("."));
-        EditorState::from_parts(main_text, data_dir)
-            .map_err(|error| format!("Could not load {}: {error}", path.display()))
+        let (mut state, context) = EditorState::from_parts(main_text, data_dir)
+            .map_err(|error| format!("Could not load {}: {error}", path.display()))?;
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            state.data_file = name.to_string();
+        }
+        Ok((state, context))
     }
 
     /// Builds the editor from the main data file's text and its folder.
@@ -186,6 +195,7 @@ impl EditorState {
             main_keys,
             people,
             main_text,
+            data_file: DEFAULT_DATA_FILE.to_string(),
             data_dir,
             disk,
             broken,
@@ -333,16 +343,31 @@ impl EditorState {
             Ok(path) => {
                 let key = file.key.clone();
                 let old_key = std::mem::replace(&mut self.saved_key[index], key.clone());
+                let data_file = &self.data_file;
                 let mut status = format!("Saved {}.", path.display());
                 if self.main_keys.contains(&key) {
                     status = format!(
-                        "Saved. The copy of {key} in first_leg.ron is now shadowed and can be deleted by hand."
+                        "Saved. The copy of {key} in {data_file} is now shadowed and can be deleted by hand."
                     );
                 }
-                if old_key != key && is_saved(&self.disk, &old_key) {
-                    status.push_str(&format!(
-                        " The key changed from {old_key}, so {old_key}.ron is still in data/people/ until you Delete it."
-                    ));
+                if old_key != key {
+                    // A rename moves the person: the old file goes once the
+                    // new one is written.
+                    if is_saved(&self.disk, &old_key) {
+                        match delete_person(&self.data_dir, &old_key) {
+                            Ok(_) => status.push_str(&format!(
+                                " Renamed from {old_key}; {old_key}.ron was removed from data/people/."
+                            )),
+                            Err(error) => status.push_str(&format!(
+                                " Renamed from {old_key}, but could not remove {old_key}.ron: {error}"
+                            )),
+                        }
+                    }
+                    if self.main_keys.contains(&old_key) {
+                        status.push_str(&format!(
+                            " The entry for {old_key} in {data_file} still exists and will still load; the editor never edits that file."
+                        ));
+                    }
                 }
                 if let Err(message) = self.reload_disk() {
                     status.push(' ');
@@ -383,8 +408,8 @@ impl EditorState {
                         self.people[index] = original;
                         self.saved_key[index] = key.clone();
                         self.edited[index] = false;
-                        self.status
-                            .push_str(" The first_leg.ron copy is back in the list.");
+                        let note = format!(" The {} copy is back in the list.", self.data_file);
+                        self.status.push_str(&note);
                         self.dirty = true;
                     }
                     _ => self.remove_person(index),
@@ -471,7 +496,8 @@ fn editor_ui(
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .show(&egui_ctx, |ui| {
                     ui.label(format!(
-                        "Delete {key}.ron from data/people/? first_leg.ron is not touched."
+                        "Delete {key}.ron from data/people/? {} is not touched.",
+                        state.data_file
                     ));
                     ui.horizontal(|ui| {
                         if ui.button("Delete").clicked() {
@@ -533,7 +559,10 @@ fn people_panel(ui: &mut egui::Ui, state: &EditorState, actions: &mut Vec<Action
             actions.push(Action::Save);
         }
     });
-    ui.small("* from first_leg.ron, not yet saved to data/people/");
+    ui.small(format!(
+        "* from {}, not yet saved to data/people/",
+        state.data_file
+    ));
     ui.separator();
 
     let list_height = (ui.available_height() * 0.6).max(120.0);
@@ -712,6 +741,61 @@ mod tests {
     }
 
     #[test]
+    fn renaming_a_saved_person_moves_the_file() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        state.select(Some(at));
+        state.people[at].name = "Changed".to_string();
+        state.save();
+        assert!(person_path(&dir, "jonnoj").exists(), "{}", state.status);
+
+        state.people[at].key = "jonno-moved".to_string();
+        state.dirty = true;
+        state.save();
+
+        assert!(
+            person_path(&dir, "jonno-moved").exists(),
+            "{}",
+            state.status
+        );
+        assert!(!person_path(&dir, "jonnoj").exists(), "{}", state.status);
+        assert!(
+            state.status.contains("jonnoj.ron was removed"),
+            "{}",
+            state.status
+        );
+        assert!(!is_saved(&state.disk, "jonnoj"));
+        assert!(is_saved(&state.disk, "jonno-moved"));
+    }
+
+    #[test]
+    fn renaming_an_unsaved_main_file_person_says_the_main_entry_remains() {
+        let dir = scratch_dir();
+        let mut state = state_in(&dir);
+        let at = index_of(&state, "jonnoj");
+        state.select(Some(at));
+        state.people[at].key = "jonno-moved".to_string();
+        state.dirty = true;
+        state.save();
+
+        assert!(
+            person_path(&dir, "jonno-moved").exists(),
+            "{}",
+            state.status
+        );
+        assert!(!person_path(&dir, "jonnoj").exists());
+        assert!(
+            state
+                .status
+                .contains("entry for jonnoj in first_leg.ron still exists"),
+            "{}",
+            state.status
+        );
+        assert!(!state.status.contains("until you Delete"));
+    }
+
+    #[test]
     fn save_checks_for_itself_and_refuses_an_error() {
         let dir = scratch_dir();
         let mut state = state_in(&dir);
@@ -804,21 +888,6 @@ mod tests {
             state.status
         );
         assert!(!state.status.contains("shadowed"));
-    }
-
-    #[test]
-    fn renaming_a_saved_person_notes_that_the_old_file_stays() {
-        let dir = scratch_dir();
-        let mut state = state_in(&dir);
-        let at = index_of(&state, "jonnoj");
-        state.select(Some(at));
-        state.save();
-        state.people[at].key = "jonnoj-two".to_string();
-        state.dirty = true;
-        state.save();
-        assert!(person_path(&dir, "jonnoj-two").exists());
-        assert!(person_path(&dir, "jonnoj").exists());
-        assert!(state.status.contains("still in data/people/"));
     }
 
     #[test]
