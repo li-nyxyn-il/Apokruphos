@@ -127,6 +127,68 @@ fn blank_flag_is_refused_in_conditions_and_actions() {
     );
 }
 
+/// A tree with one choice that runs the given actions, in RON.
+fn tree_with_actions(actions: &str) -> String {
+    tree_with(
+        GOOD_ENTRY,
+        &format!("(key: \"a\", line: \"hi\", choices: [(text: \"x\", actions: [{actions}])])"),
+    )
+}
+
+#[test]
+fn blank_journal_entry_is_refused() {
+    assert_eq!(
+        bad_tree(&tree_with_actions("WriteJournal(\"  \")")),
+        TreeProblem::BlankJournal
+    );
+}
+
+#[test]
+fn hostility_toward_itself_is_refused() {
+    assert_eq!(
+        bad_tree(&tree_with_actions(
+            "ChangeHostility(from: Bandit, toward: Bandit, by: 1)"
+        )),
+        TreeProblem::HostilityTowardItself(varif_core::FactionId::Bandit)
+    );
+}
+
+#[test]
+fn blank_item_name_is_refused_when_giving_and_taking() {
+    for action in [
+        "GiveItem(item: \" \", count: 1)",
+        "TakeItem(item: \"\", count: 1)",
+    ] {
+        assert_eq!(
+            bad_tree(&tree_with_actions(action)),
+            TreeProblem::BlankItemName
+        );
+    }
+}
+
+#[test]
+fn a_granted_item_that_cannot_be_carried_is_refused() {
+    for action in [
+        "GrantItem((name: \" \", type: Goods, count: 1))",
+        "GrantItem((name: \"lamp\", type: Goods, count: 0))",
+    ] {
+        assert!(
+            matches!(
+                bad_tree(&tree_with_actions(action)),
+                TreeProblem::BadGrantedItem(_)
+            ),
+            "{action}"
+        );
+    }
+}
+
+#[test]
+fn good_actions_still_load() {
+    let actions = "WriteJournal(\"met Hest\"), ChangeHostility(from: Bandit, toward: Ecumenci, by: 1), GiveItem(item: \"bread\", count: 1), GrantItem((name: \"lamp\", type: Goods, count: 1))";
+    let extra = tree_with_actions(actions);
+    load_world(&with_hest(&extra)).unwrap();
+}
+
 #[test]
 fn unknown_sprite_is_refused() {
     assert_eq!(

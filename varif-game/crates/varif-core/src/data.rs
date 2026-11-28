@@ -6,7 +6,7 @@
 use crate::calendar::{Date, HOURS_PER_DAY};
 use crate::character::{Character, SheetError};
 use crate::dialogue::{Action, Condition, DialogueTree, Sprite};
-use crate::faction::Hostility;
+use crate::faction::{FactionId, Hostility};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::DialogueLine;
 use crate::rng::Rng;
@@ -119,6 +119,15 @@ pub enum TreeProblem {
     BlankFlag,
     /// A node shows a sprite the person does not have.
     UnknownSprite(String),
+    /// A journal entry with no text, which the game refuses to write.
+    BlankJournal,
+    /// A hostility change from a faction toward itself, which the game
+    /// refuses.
+    HostilityTowardItself(FactionId),
+    /// A given or taken item with no name.
+    BlankItemName,
+    /// An item to grant that could not be carried, with the reason.
+    BadGrantedItem(String),
 }
 
 impl fmt::Display for TreeProblem {
@@ -131,6 +140,16 @@ impl fmt::Display for TreeProblem {
             TreeProblem::UnknownSite(key) => write!(f, "the place has no site \"{key}\""),
             TreeProblem::BlankFlag => write!(f, "a flag has no name"),
             TreeProblem::UnknownSprite(name) => write!(f, "there is no sprite \"{name}\""),
+            TreeProblem::BlankJournal => write!(f, "a journal entry has no text"),
+            TreeProblem::HostilityTowardItself(faction) => write!(
+                f,
+                "a hostility change is from {} toward itself",
+                faction.name()
+            ),
+            TreeProblem::BlankItemName => write!(f, "an item to give or take has no name"),
+            TreeProblem::BadGrantedItem(reason) => {
+                write!(f, "an item to grant cannot be carried: {reason}")
+            }
         }
     }
 }
@@ -622,9 +641,7 @@ pub fn check_tree(
         for choice in &node.choices {
             check_condition(&choice.when, place_sites)?;
             for action in &choice.actions {
-                if let Action::SetFlag(flag) | Action::ClearFlag(flag) = action {
-                    check_flag(flag)?;
-                }
+                check_action(action)?;
             }
         }
     }
@@ -636,6 +653,31 @@ fn check_flag(flag: &str) -> Result<(), TreeProblem> {
         Err(TreeProblem::BlankFlag)
     } else {
         Ok(())
+    }
+}
+
+/// Reports an action that would fail every time it is picked.
+fn check_action(action: &Action) -> Result<(), TreeProblem> {
+    match action {
+        Action::SetFlag(flag) | Action::ClearFlag(flag) => check_flag(flag),
+        Action::WriteJournal(text) if text.trim().is_empty() => Err(TreeProblem::BlankJournal),
+        Action::WriteJournal(_) => Ok(()),
+        Action::ChangeHostility { from, toward, .. } if from == toward => {
+            Err(TreeProblem::HostilityTowardItself(*from))
+        }
+        Action::ChangeHostility { .. } => Ok(()),
+        Action::GiveItem { item, .. } | Action::TakeItem { item, .. } if item.trim().is_empty() => {
+            Err(TreeProblem::BlankItemName)
+        }
+        Action::GiveItem { .. } | Action::TakeItem { .. } => Ok(()),
+        Action::GrantItem(item) => item
+            .check_pack()
+            .map_err(|error| TreeProblem::BadGrantedItem(error.to_string())),
+        Action::ChangeAttitude(_)
+        | Action::SetAttitude(_)
+        | Action::Recruit
+        | Action::SetRecruitable(_)
+        | Action::StartCombat => Ok(()),
     }
 }
 
@@ -656,7 +698,18 @@ fn check_condition(condition: &Condition, place_sites: &[String]) -> Result<(), 
         Condition::PartyAtSite(key) if !place_sites.contains(key) => {
             Err(TreeProblem::UnknownSite(key.clone()))
         }
-        _ => Ok(()),
+        Condition::PartyAtSite(_)
+        | Condition::Always
+        | Condition::Attitude(_)
+        | Condition::Hostility(_)
+        | Condition::Friendliness(_)
+        | Condition::Bucket(_)
+        | Condition::FactionHostility { .. }
+        | Condition::IsFollower
+        | Condition::InParty
+        | Condition::Recruitable
+        | Condition::PlayerHas { .. }
+        | Condition::NpcHas { .. } => Ok(()),
     }
 }
 

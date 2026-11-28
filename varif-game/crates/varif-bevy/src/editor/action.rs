@@ -62,7 +62,7 @@ pub fn default_of(index: usize) -> Action {
         7 => Action::SetRecruitable(true),
         8 => Action::SetFlag(String::new()),
         9 => Action::ClearFlag(String::new()),
-        10 => Action::WriteJournal(String::new()),
+        10 => Action::WriteJournal("ASSUMPTION: journal entry to be written".to_string()),
         _ => Action::StartCombat,
     }
 }
