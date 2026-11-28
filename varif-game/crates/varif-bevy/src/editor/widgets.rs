@@ -111,9 +111,33 @@ fn slot_name(slot: Option<EquipSlot>) -> &'static str {
     slot.map_or("none", EquipSlot::name)
 }
 
+/// Which optional fields [`item_editor`] shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ItemEditorOptions {
+    pub show_slot: bool,
+    pub show_count: bool,
+}
+
+impl Default for ItemEditorOptions {
+    fn default() -> Self {
+        ItemEditorOptions {
+            show_slot: true,
+            show_count: true,
+        }
+    }
+}
+
+impl ItemEditorOptions {
+    /// A worn item: its slot and count are fixed by the slot it is in.
+    pub const WORN: ItemEditorOptions = ItemEditorOptions {
+        show_slot: false,
+        show_count: false,
+    };
+}
+
 /// Every field of an item, with its effects. The caller wraps this in
 /// `ui.push_id` so two editors on screen do not share widget ids.
-pub fn item_editor(ui: &mut egui::Ui, item: &mut Item) {
+pub fn item_editor(ui: &mut egui::Ui, item: &mut Item, options: ItemEditorOptions) {
     egui::Grid::new("item_fields")
         .num_columns(2)
         .spacing([12.0, 6.0])
@@ -140,10 +164,11 @@ pub fn item_editor(ui: &mut egui::Ui, item: &mut Item) {
             ui.add(egui::DragValue::new(&mut item.value).range(0..=u32::MAX));
             ui.end_row();
 
-            ui.label("Count");
-            ui.add(egui::DragValue::new(&mut item.count).range(0..=u32::MAX));
-            ui.end_row();
-
+            if options.show_count {
+                ui.label("Count");
+                ui.add(egui::DragValue::new(&mut item.count).range(0..=u32::MAX));
+                ui.end_row();
+            }
             ui.label("Durability");
             ui.add(egui::DragValue::new(&mut item.durability).range(0..=u32::MAX));
             ui.end_row();
@@ -158,16 +183,18 @@ pub fn item_editor(ui: &mut egui::Ui, item: &mut Item) {
             );
             ui.end_row();
 
-            ui.label("Slot");
-            egui::ComboBox::from_id_salt("item_slot")
-                .selected_text(slot_name(item.slot))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut item.slot, None, "none");
-                    for slot in EquipSlot::ALL {
-                        ui.selectable_value(&mut item.slot, Some(slot), slot.name());
-                    }
-                });
-            ui.end_row();
+            if options.show_slot {
+                ui.label("Slot");
+                egui::ComboBox::from_id_salt("item_slot")
+                    .selected_text(slot_name(item.slot))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut item.slot, None, "none");
+                        for slot in EquipSlot::ALL {
+                            ui.selectable_value(&mut item.slot, Some(slot), slot.name());
+                        }
+                    });
+                ui.end_row();
+            }
         });
 
     ui.label("Effects");
@@ -221,6 +248,13 @@ mod tests {
         for index in 0..3 {
             assert_eq!(payload_index(payload_of(index, 9)), index);
         }
+    }
+
+    #[test]
+    fn worn_options_hide_slot_and_count_and_default_shows_both() {
+        let all = ItemEditorOptions::default();
+        assert!(all.show_slot && all.show_count);
+        assert!(!ItemEditorOptions::WORN.show_slot && !ItemEditorOptions::WORN.show_count);
     }
 
     #[test]

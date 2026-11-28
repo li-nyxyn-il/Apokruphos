@@ -1,7 +1,7 @@
 //! The Inventory tab: the pack's stacks and the worn slots.
 
 use super::{
-    widgets::{item_editor, new_item},
+    widgets::{item_editor, new_item, ItemEditorOptions},
     EditorContext,
 };
 use bevy_egui::egui;
@@ -20,7 +20,9 @@ pub fn ui(ui: &mut egui::Ui, file: &mut PersonFile, _context: &EditorContext) {
         egui::CollapsingHeader::new(title)
             .id_salt(("pack", index))
             .show(ui, |ui| {
-                ui.push_id(index, |ui| item_editor(ui, item));
+                ui.push_id(index, |ui| {
+                    item_editor(ui, item, ItemEditorOptions::default())
+                });
                 if ui.button("Remove stack").clicked() {
                     remove = Some(index);
                 }
@@ -59,7 +61,8 @@ fn worn_row(ui: &mut egui::Ui, sheet: &mut Character, slot: EquipSlot) {
         .id_salt(("worn", slot.name()))
         .show(ui, |ui| {
             ui.push_id(slot.name(), |ui| {
-                item_editor(ui, &mut sheet.equipped[at].item)
+                ui.label(format!("Slot: {} (fixed), count 1", slot.name()));
+                item_editor(ui, &mut sheet.equipped[at].item, ItemEditorOptions::WORN)
             });
             ui.horizontal(|ui| {
                 if ui.button("Empty").clicked() {
