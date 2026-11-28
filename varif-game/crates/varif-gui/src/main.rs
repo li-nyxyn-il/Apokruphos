@@ -359,7 +359,10 @@ impl App {
                 if changed_scale {
                     self.real_carry_ms = 0;
                 }
-                for event in &events {
+                for (i, event) in events.iter().enumerate() {
+                    if said_nothing_before_leaving(&events, i) {
+                        continue;
+                    }
                     let line = describe(&self.world, event);
                     let timescale = matches!(event, Event::TimeScaleChanged { .. });
                     if timescale
@@ -1762,6 +1765,19 @@ fn overlap(a: &egui::Rect, b: &egui::Rect) -> f32 {
     } else {
         0.0
     }
+}
+
+/// True for a `Said` with an empty reply that a `ConversationEnded` for the
+/// same person follows in the same batch. "Says nothing" would read oddly
+/// just before "You leave".
+fn said_nothing_before_leaving(events: &[Event], index: usize) -> bool {
+    let Event::Said { person, reply, .. } = &events[index] else {
+        return false;
+    };
+    reply.trim().is_empty()
+        && events[index + 1..]
+            .iter()
+            .any(|e| matches!(e, Event::ConversationEnded { person: left } if left == person))
 }
 
 /// The same wording as the command-line program, so the two logs read alike.

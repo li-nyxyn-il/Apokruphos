@@ -187,8 +187,9 @@ fn main() {
                 }
                 _ => match answer.parse::<usize>() {
                     Ok(n) if n >= 1 && n <= world.dialogue_options(person).len() => {
+                        // The reply was just printed, so only the choices follow.
                         if run(&mut world, Command::Say { line: n - 1 }) {
-                            show_options(&world, person);
+                            show_choices(&world, person);
                         }
                     }
                     _ => println!("Answer with the number of a line, or bye to leave."),
@@ -404,7 +405,10 @@ enum Asking {
 fn run(world: &mut World, command: Command) -> bool {
     match world.apply(command) {
         Ok(events) => {
-            for event in &events {
+            for (i, event) in events.iter().enumerate() {
+                if said_nothing_before_leaving(&events, i) {
+                    continue;
+                }
                 println!("{}", describe(world, event));
             }
             true
@@ -660,10 +664,7 @@ fn describe(world: &World, event: &Event) -> String {
             text,
             reply,
         } => {
-            if world.npc_line() == Some(reply.as_str()) {
-                // A tree node: the options listing shows what they said.
-                format!("You: \"{text}\"")
-            } else if reply.trim().is_empty() {
+            if reply.trim().is_empty() {
                 format!("You: \"{text}\"
 {} says nothing.", person_name(world, *person))
             } else {
@@ -1222,6 +1223,24 @@ fn show_options(world: &World, person: PersonId) {
     if let Some(line) = world.npc_line() {
         println!("{}: \"{line}\"", person_name(world, person));
     }
+    show_choices(world, person);
+}
+
+/// True for a `Said` with an empty reply that a `ConversationEnded` for the
+/// same person follows in the same batch. "Says nothing" would read oddly
+/// just before "You leave".
+fn said_nothing_before_leaving(events: &[Event], index: usize) -> bool {
+    let Event::Said { person, reply, .. } = &events[index] else {
+        return false;
+    };
+    reply.trim().is_empty()
+        && events[index + 1..]
+            .iter()
+            .any(|e| matches!(e, Event::ConversationEnded { person: left } if left == person))
+}
+
+/// Prints the numbered lines the player can say to `person`.
+fn show_choices(world: &World, person: PersonId) {
     for (i, line) in world.dialogue_options(person).iter().enumerate() {
         if line.label.is_empty() {
             println!("  {}. \"{}\"", i + 1, line.text);
