@@ -1,0 +1,64 @@
+(
+    key: "donold",
+    name: "Donold Audsen",
+    title: "Follower",
+    at: "sthepenhall",
+    site: None,
+    in_party: true,
+    recruitable: false,
+    sheet: Some((
+        role: Npc(
+            follower: true,
+            attitude: 50,
+        ),
+        age: 18,
+        blood: Red,
+        heritage: Aphlian,
+        akstada: Bastion,
+        health: 100,
+        fatigue: 100,
+        road_rest_debt: false,
+        resilience: 100,
+        resilience_max: 100,
+        vitality_bonus: 0,
+        tongues: [
+            Aphlian,
+        ],
+        background: "Nivaer",
+        primary: Audsen,
+        secondary: [
+            Player,
+        ],
+        level: 1,
+        inventory: [],
+        equipped: [],
+    )),
+    dialogue: [],
+    schedule: (
+        spans: [],
+    ),
+    tree: Some((
+        entries: [
+            (
+                when: Always,
+                node: "start",
+            ),
+        ],
+        nodes: [
+            (
+                key: "start",
+                line: "Hey there",
+                sprite: None,
+                choices: [
+                    (
+                        text: "Goodbye",
+                        when: Always,
+                        actions: [],
+                        next: None,
+                    ),
+                ],
+            ),
+        ],
+    )),
+    sprites: [],
+)
