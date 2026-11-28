@@ -1,8 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/varif-core", "crates/varif-cli", "crates/varif-gui"]
-# What plain `cargo build`, `cargo test` and `cargo run` act on. The window is
-# left out so that they stay quick; run it with `cargo run -p varif-gui`.
+members = [
+    "crates/varif-core",
+    "crates/varif-cli",
+    "crates/varif-gui",
+    "crates/varif-bevy",
+]
+# What plain `cargo build`, `cargo test` and `cargo run` act on. The window
+# crates are left out so that they stay quick; run them with
+# `cargo run -p varif-gui` or `cargo bevy`.
 default-members = ["crates/varif-core", "crates/varif-cli"]
 
 [workspace.package]
@@ -12,3 +18,5 @@ edition = "2021"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
+bevy = "0.20"
+bevy_egui = "0.43.1"

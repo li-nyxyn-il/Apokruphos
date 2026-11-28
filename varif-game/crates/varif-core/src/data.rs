@@ -5,16 +5,18 @@
 
 use crate::calendar::{Date, HOURS_PER_DAY};
 use crate::character::{Character, SheetError};
-use crate::faction::Hostility;
-use crate::ids::PlaceId;
+use crate::dialogue::{Action, Condition, DialogueTree, Sprite};
+use crate::faction::{FactionId, Hostility};
+use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::DialogueLine;
 use crate::rng::Rng;
 use crate::schedule::{RoadLeg, Schedule, Span, Whereabouts};
 use crate::sky::Sky;
 use crate::world::{Person, Place, Road, SiteKind, TimeMode, World};
-use serde::Deserialize;
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 struct WorldData {
@@ -23,7 +25,7 @@ struct WorldData {
     #[serde(default)]
     roads: Vec<RoadData>,
     #[serde(default)]
-    people: Vec<PersonData>,
+    people: Vec<PersonFile>,
     #[serde(default)]
     dialogue: Vec<DialogueLine>,
 }
@@ -49,45 +51,107 @@ struct RoadData {
     encounter_chance: u32,
 }
 
-#[derive(Debug, Deserialize)]
-struct PersonData {
-    key: String,
-    name: String,
-    title: String,
-    at: String,
+/// One person as a data file writes them, with places and sites named by
+/// key. This is the type an editor reads and writes.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PersonFile {
+    pub key: String,
+    pub name: String,
+    pub title: String,
+    pub at: String,
     /// The key of a site inside `at`, when that place has sites.
     #[serde(default)]
-    site: Option<String>,
+    pub site: Option<String>,
     #[serde(default)]
-    in_party: bool,
+    pub in_party: bool,
     #[serde(default)]
-    recruitable: bool,
+    pub recruitable: bool,
     #[serde(default)]
-    sheet: Option<Character>,
+    pub sheet: Option<Character>,
     #[serde(default)]
-    dialogue: Vec<DialogueLine>,
+    pub dialogue: Vec<DialogueLine>,
     #[serde(default)]
-    schedule: ScheduleData,
+    pub schedule: ScheduleData,
+    /// A scripted conversation, used in place of `dialogue`.
+    #[serde(default)]
+    pub tree: Option<DialogueTree>,
+    /// The pictures the tree may show.
+    #[serde(default)]
+    pub sprites: Vec<Sprite>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct ScheduleData {
+/// A schedule as a data file writes it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScheduleData {
     #[serde(default)]
-    spans: Vec<SpanData>,
+    pub spans: Vec<SpanData>,
 }
 
-#[derive(Debug, Deserialize)]
-struct SpanData {
-    hours: u32,
-    place: String,
+/// One span of a schedule as a data file writes it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpanData {
+    pub hours: u32,
+    pub place: String,
     #[serde(default)]
-    site: Option<String>,
+    pub site: Option<String>,
     /// The place key the NPC is walking from, when the span is travel.
     #[serde(default)]
-    road_from: Option<String>,
+    pub road_from: Option<String>,
     /// The place key the NPC is walking toward, when the span is travel.
     #[serde(default)]
-    road_to: Option<String>,
+    pub road_to: Option<String>,
+}
+
+/// What is wrong with a dialogue tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TreeProblem {
+    /// The tree has no entry, so no conversation could open.
+    NoEntries,
+    /// Two nodes share this key.
+    DuplicateNode(String),
+    /// An entry or a choice leads to a node that is not there.
+    MissingNode(String),
+    /// An hour that is not from 0 to 23.
+    BadHour(u32),
+    /// `PartyAtSite` names a site the person's place does not have.
+    UnknownSite(String),
+    /// A flag with no name.
+    BlankFlag,
+    /// A node shows a sprite the person does not have.
+    UnknownSprite(String),
+    /// A journal entry with no text, which the game refuses to write.
+    BlankJournal,
+    /// A hostility change from a faction toward itself, which the game
+    /// refuses.
+    HostilityTowardItself(FactionId),
+    /// A given or taken item with no name.
+    BlankItemName,
+    /// An item to grant that could not be carried, with the reason.
+    BadGrantedItem(String),
+}
+
+impl fmt::Display for TreeProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TreeProblem::NoEntries => write!(f, "the tree has no entry"),
+            TreeProblem::DuplicateNode(key) => write!(f, "two nodes share the key \"{key}\""),
+            TreeProblem::MissingNode(key) => write!(f, "nothing is called \"{key}\" in the tree"),
+            TreeProblem::BadHour(hour) => write!(f, "the hour {hour} is not from 0 to 23"),
+            TreeProblem::UnknownSite(key) => write!(f, "the place has no site \"{key}\""),
+            TreeProblem::BlankFlag => write!(f, "a flag has no name"),
+            TreeProblem::UnknownSprite(name) => write!(f, "there is no sprite \"{name}\""),
+            TreeProblem::BlankJournal => write!(f, "a journal entry has no text"),
+            TreeProblem::HostilityTowardItself(faction) => write!(
+                f,
+                "a hostility change is from {} toward itself",
+                faction.name()
+            ),
+            TreeProblem::BlankItemName => write!(f, "an item to give or take has no name"),
+            TreeProblem::BadGrantedItem(reason) => {
+                write!(f, "an item to grant cannot be carried: {reason}")
+            }
+        }
+    }
 }
 
 /// What is wrong with a data file.
@@ -149,6 +213,29 @@ pub enum DataError {
     RoadNeedsTwoEnds {
         person: String,
     },
+    /// A person's dialogue tree is not sound.
+    BadTree {
+        person: String,
+        problem: TreeProblem,
+    },
+    /// Two of a person's sprites share a name.
+    DuplicateSprite {
+        person: String,
+        sprite: String,
+    },
+    /// A people file could not be loaded. `file` is its name without
+    /// `.ron`, and `error` is what was wrong inside it.
+    PeopleFile {
+        file: String,
+        error: Box<DataError>,
+    },
+    /// A people file's name is not the key of the person inside it.
+    FileKeyMismatch {
+        file: String,
+        key: String,
+    },
+    /// The person has no character sheet, so there is no one to talk to.
+    NoSheet(String),
 }
 
 impl fmt::Display for DataError {
@@ -203,6 +290,22 @@ impl fmt::Display for DataError {
                     "a travel span in {person}'s schedule names one end of the road and not the other"
                 )
             }
+            DataError::BadTree { person, problem } => {
+                write!(f, "{person}'s dialogue tree is not valid: {problem}")
+            }
+            DataError::DuplicateSprite { person, sprite } => {
+                write!(f, "{person} has two sprites named \"{sprite}\"")
+            }
+            DataError::PeopleFile { file, error } => {
+                write!(f, "the people file \"{file}.ron\": {error}")
+            }
+            DataError::FileKeyMismatch { file, key } => {
+                write!(
+                    f,
+                    "the people file \"{file}.ron\" holds the person \"{key}\"; the file must be named \"{key}.ron\""
+                )
+            }
+            DataError::NoSheet(key) => write!(f, "{key} has no character sheet"),
         }
     }
 }
@@ -211,8 +314,44 @@ impl std::error::Error for DataError {}
 
 /// Builds a [`World`] from the text of a data file.
 pub fn load_world(text: &str) -> Result<World, DataError> {
-    let data: WorldData = ron::from_str(text).map_err(|e| DataError::Parse(e.to_string()))?;
+    load_world_with_people(text, &[])
+}
 
+/// Builds a [`World`] from the text of a data file and any people files.
+/// Each pair is a file name without `.ron` and the text of the file, which
+/// holds one [`PersonFile`]. A people file replaces the person with the same
+/// key in the main file, keeping their place in the table; a new key is
+/// added at the end. A file whose name is not its key, or two files with one
+/// key, are refused.
+pub fn load_world_with_people(text: &str, people: &[(String, String)]) -> Result<World, DataError> {
+    let mut data: WorldData = ron::from_str(text).map_err(|e| DataError::Parse(e.to_string()))?;
+    let mut from_files: BTreeSet<String> = BTreeSet::new();
+    for (file, file_text) in people {
+        let person: PersonFile = ron::from_str(file_text).map_err(|e| DataError::PeopleFile {
+            file: file.clone(),
+            error: Box::new(DataError::Parse(e.to_string())),
+        })?;
+        if &person.key != file {
+            return Err(DataError::FileKeyMismatch {
+                file: file.clone(),
+                key: person.key,
+            });
+        }
+        if !from_files.insert(person.key.clone()) {
+            return Err(DataError::DuplicatePerson(person.key));
+        }
+        match data.people.iter().position(|p| p.key == person.key) {
+            Some(index) => data.people[index] = person,
+            None => data.people.push(person),
+        }
+    }
+    build_world(data, &from_files)
+}
+
+/// Checks the parsed data and turns it into a [`World`]. `from_files` holds
+/// the keys of the people who came from people files, so that a problem with
+/// one of them names the file.
+fn build_world(data: WorldData, from_files: &BTreeSet<String>) -> Result<World, DataError> {
     // A BTreeMap keeps its keys in order, so nothing here depends on the
     // arbitrary ordering a HashMap would have.
     let mut place_ids: BTreeMap<String, PlaceId> = BTreeMap::new();
@@ -292,12 +431,8 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         });
     }
 
-    let mut people: Vec<Person> = Vec::new();
     let mut seen_player = false;
-    for mut person in data.people {
-        if people.iter().any(|p| p.key == person.key) {
-            return Err(DataError::DuplicatePerson(person.key));
-        }
+    let mut build = |mut person: PersonFile| -> Result<Person, DataError> {
         // People in the party start wherever the party starts.
         let at = if person.in_party {
             party_at
@@ -322,12 +457,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
                 owner: format!("{}'s dialogue", person.name),
             });
         }
-        let schedule = load_schedule(
-            &person.name,
-            &person.schedule,
-            &data.places,
-            &lookup,
-        )?;
+        let schedule = load_schedule(&person.name, &person.schedule, &data.places, &lookup)?;
         let place = &data.places[at.index()];
         let site = match person.site.as_deref() {
             Some(key) => Some(place.find_site(key).ok_or_else(|| DataError::UnknownSite {
@@ -343,7 +473,22 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             }
             None => None,
         };
-        people.push(Person {
+        for (i, sprite) in person.sprites.iter().enumerate() {
+            if person.sprites[..i].iter().any(|s| s.name == sprite.name) {
+                return Err(DataError::DuplicateSprite {
+                    person: person.key.clone(),
+                    sprite: sprite.name.clone(),
+                });
+            }
+        }
+        if let Some(tree) = &person.tree {
+            let sites: Vec<String> = place.sites.iter().map(|s| s.key.clone()).collect();
+            check_tree(tree, &person.sprites, &sites).map_err(|problem| DataError::BadTree {
+                person: person.key.clone(),
+                problem,
+            })?;
+        }
+        Ok(Person {
             key: person.key,
             name: person.name,
             title: person.title,
@@ -354,7 +499,28 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
             dialogue: person.dialogue,
             site,
             schedule,
+            tree: person.tree,
+            sprites: person.sprites,
+        })
+    };
+
+    let mut people: Vec<Person> = Vec::new();
+    for person in data.people {
+        if people.iter().any(|p| p.key == person.key) {
+            return Err(DataError::DuplicatePerson(person.key));
+        }
+        let key = person.key.clone();
+        let built = build(person).map_err(|error| {
+            if from_files.contains(&key) {
+                DataError::PeopleFile {
+                    file: key,
+                    error: Box::new(error),
+                }
+            } else {
+                error
+            }
         });
+        people.push(built?);
     }
 
     Ok(World {
@@ -376,7 +542,9 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         hostility: Hostility::starting(),
         dialogue: data.dialogue,
         conversation: None,
+        conversation_node: None,
         sky: Sky::new(start.seed),
+        flags: BTreeSet::new(),
     })
 }
 
@@ -399,11 +567,15 @@ fn load_schedule(
         let site = match span.site.as_deref() {
             Some(key) => {
                 let place_data = &places[place.index()];
-                Some(place_data.find_site(key).ok_or_else(|| DataError::UnknownSite {
-                    person: person.to_string(),
-                    place: place_data.name.clone(),
-                    site: key.to_string(),
-                })?)
+                Some(
+                    place_data
+                        .find_site(key)
+                        .ok_or_else(|| DataError::UnknownSite {
+                            person: person.to_string(),
+                            place: place_data.name.clone(),
+                            site: key.to_string(),
+                        })?,
+                )
             }
             None => None,
         };
@@ -429,4 +601,228 @@ fn load_schedule(
         });
     }
     Ok(Schedule { spans })
+}
+
+/// Checks a dialogue tree and reports the first problem found. `sprites` are
+/// the person's pictures and `place_sites` the keys of the sites in their
+/// place.
+pub fn check_tree(
+    tree: &DialogueTree,
+    sprites: &[Sprite],
+    place_sites: &[String],
+) -> Result<(), TreeProblem> {
+    if tree.entries.is_empty() {
+        return Err(TreeProblem::NoEntries);
+    }
+    for (i, node) in tree.nodes.iter().enumerate() {
+        if tree.nodes[..i].iter().any(|n| n.key == node.key) {
+            return Err(TreeProblem::DuplicateNode(node.key.clone()));
+        }
+    }
+    let leads_to = tree.entries.iter().map(|e| Some(&e.node)).chain(
+        tree.nodes
+            .iter()
+            .flat_map(|n| n.choices.iter().map(|c| c.next.as_ref())),
+    );
+    for target in leads_to.flatten() {
+        if tree.node(target).is_none() {
+            return Err(TreeProblem::MissingNode(target.clone()));
+        }
+    }
+    for entry in &tree.entries {
+        check_condition(&entry.when, place_sites)?;
+    }
+    for node in &tree.nodes {
+        if let Some(name) = &node.sprite {
+            if !sprites.iter().any(|s| &s.name == name) {
+                return Err(TreeProblem::UnknownSprite(name.clone()));
+            }
+        }
+        for choice in &node.choices {
+            check_condition(&choice.when, place_sites)?;
+            for action in &choice.actions {
+                check_action(action)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_flag(flag: &str) -> Result<(), TreeProblem> {
+    if flag.trim().is_empty() {
+        Err(TreeProblem::BlankFlag)
+    } else {
+        Ok(())
+    }
+}
+
+/// Reports an action that would fail every time it is picked.
+fn check_action(action: &Action) -> Result<(), TreeProblem> {
+    match action {
+        Action::SetFlag(flag) | Action::ClearFlag(flag) => check_flag(flag),
+        Action::WriteJournal(text) if text.trim().is_empty() => Err(TreeProblem::BlankJournal),
+        Action::WriteJournal(_) => Ok(()),
+        Action::ChangeHostility { from, toward, .. } if from == toward => {
+            Err(TreeProblem::HostilityTowardItself(*from))
+        }
+        Action::ChangeHostility { .. } => Ok(()),
+        Action::GiveItem { item, .. } | Action::TakeItem { item, .. } if item.trim().is_empty() => {
+            Err(TreeProblem::BlankItemName)
+        }
+        Action::GiveItem { .. } | Action::TakeItem { .. } => Ok(()),
+        Action::GrantItem(item) => item
+            .check_pack()
+            .map_err(|error| TreeProblem::BadGrantedItem(error.to_string())),
+        Action::ChangeAttitude(_)
+        | Action::SetAttitude(_)
+        | Action::Recruit
+        | Action::SetRecruitable(_)
+        | Action::StartCombat => Ok(()),
+    }
+}
+
+/// Walks a condition and everything nested inside it.
+fn check_condition(condition: &Condition, place_sites: &[String]) -> Result<(), TreeProblem> {
+    match condition {
+        Condition::All(inner) | Condition::Any(inner) => inner
+            .iter()
+            .try_for_each(|c| check_condition(c, place_sites)),
+        Condition::Not(inner) => check_condition(inner, place_sites),
+        Condition::Flag(flag) => check_flag(flag),
+        Condition::HourBetween { from, to } => {
+            match [*from, *to].into_iter().find(|h| *h >= HOURS_PER_DAY) {
+                Some(hour) => Err(TreeProblem::BadHour(hour)),
+                None => Ok(()),
+            }
+        }
+        Condition::PartyAtSite(key) if !place_sites.contains(key) => {
+            Err(TreeProblem::UnknownSite(key.clone()))
+        }
+        Condition::PartyAtSite(_)
+        | Condition::Always
+        | Condition::Attitude(_)
+        | Condition::Hostility(_)
+        | Condition::Friendliness(_)
+        | Condition::Bucket(_)
+        | Condition::FactionHostility { .. }
+        | Condition::IsFollower
+        | Condition::InParty
+        | Condition::Recruitable
+        | Condition::PlayerHas { .. }
+        | Condition::NpcHas { .. } => Ok(()),
+    }
+}
+
+/// The keys of nodes that no entry and no choice leads to, in tree order.
+/// The editor warns about these. They are not an error.
+pub fn unreachable_nodes(tree: &DialogueTree) -> Vec<String> {
+    let mut reached: BTreeSet<&str> = BTreeSet::new();
+    let mut pending: Vec<&str> = tree.entries.iter().map(|e| e.node.as_str()).collect();
+    while let Some(key) = pending.pop() {
+        if !reached.insert(key) {
+            continue;
+        }
+        if let Some(node) = tree.node(key) {
+            pending.extend(node.choices.iter().filter_map(|c| c.next.as_deref()));
+        }
+    }
+    tree.nodes
+        .iter()
+        .filter(|n| !reached.contains(n.key.as_str()))
+        .map(|n| n.key.clone())
+        .collect()
+}
+
+/// Reads every `*.ron` file in `dir` as a people file: the file name without
+/// `.ron` and the text, sorted by name. A folder that is not there gives an
+/// empty list, since people files are optional.
+pub fn read_people_dir(dir: &Path) -> std::io::Result<Vec<(String, String)>> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("ron") || !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        files.push((name.to_string(), std::fs::read_to_string(&path)?));
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// The text of a people file for one person, in pretty RON.
+pub fn person_file_text(file: &PersonFile) -> String {
+    ron::ser::to_string_pretty(file, ron::ser::PrettyConfig::default())
+        .expect("a person file is plain data and always serialises")
+}
+
+/// Turns a person in a loaded world back into the key-based shape a data
+/// file writes, so the editor can open anyone from the main file.
+pub fn person_file_of(world: &World, id: PersonId) -> PersonFile {
+    let person = &world.people[id.index()];
+    let place_key = |place: PlaceId| world.places[place.index()].key.clone();
+    let site_key =
+        |place: PlaceId, site: SiteId| world.places[place.index()].sites[site.index()].key.clone();
+    let spans = person
+        .schedule
+        .spans
+        .iter()
+        .map(|span| {
+            let at = &span.whereabouts;
+            SpanData {
+                hours: span.hours,
+                place: place_key(at.place),
+                site: at.site.map(|site| site_key(at.place, site)),
+                road_from: at.on_the_road.map(|leg| place_key(leg.from)),
+                road_to: at.on_the_road.map(|leg| place_key(leg.to)),
+            }
+        })
+        .collect();
+    PersonFile {
+        key: person.key.clone(),
+        name: person.name.clone(),
+        title: person.title.clone(),
+        at: place_key(person.at),
+        site: person.site.map(|site| site_key(person.at, site)),
+        in_party: person.in_party,
+        recruitable: person.recruitable,
+        sheet: person.sheet.clone(),
+        dialogue: person.dialogue.clone(),
+        schedule: ScheduleData { spans },
+        tree: person.tree.clone(),
+        sprites: person.sprites.clone(),
+    }
+}
+
+/// The people files with `file` in place of any of the same key, or added
+/// when none has it. The editor tests a person in the world that would
+/// result from saving them.
+pub(crate) fn with_person_file(
+    people: &[(String, String)],
+    file: &PersonFile,
+) -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = people
+        .iter()
+        .filter(|(name, _)| name != &file.key)
+        .cloned()
+        .collect();
+    all.push((file.key.clone(), person_file_text(file)));
+    all
+}
+
+/// Loads the main file with `file` saved as a people file, and reports what
+/// is wrong. This is the editor's gate before it writes a file.
+pub fn check_person_file(
+    main: &str,
+    people: &[(String, String)],
+    file: &PersonFile,
+) -> Result<(), DataError> {
+    load_world_with_people(main, &with_person_file(people, file)).map(|_| ())
 }

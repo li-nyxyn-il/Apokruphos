@@ -535,6 +535,18 @@ pub struct Item {
 }
 
 impl Item {
+    /// Reports what is wrong with the stack as something carried in a pack:
+    /// it needs a name and at least one of it.
+    pub fn check_pack(&self) -> Result<(), SheetError> {
+        if self.name.trim().is_empty() {
+            return Err(SheetError::BlankItem);
+        }
+        if self.count == 0 {
+            return Err(SheetError::EmptyStack(self.name.clone()));
+        }
+        Ok(())
+    }
+
     /// A supply stack with the placeholder weight, value and durability,
     /// at [`Rarity::Basic`].
     pub fn supply(item_type: ItemType, count: u32) -> Item {
@@ -790,12 +802,7 @@ impl Character {
         }
         let mut seen_items: Vec<&Item> = Vec::new();
         for item in &self.inventory {
-            if item.name.trim().is_empty() {
-                return Err(SheetError::BlankItem);
-            }
-            if item.count == 0 {
-                return Err(SheetError::EmptyStack(item.name.clone()));
-            }
+            item.check_pack()?;
             if seen_items.iter().any(|held| held.stacks_with(item)) {
                 return Err(SheetError::DuplicateItem(item.name.clone()));
             }

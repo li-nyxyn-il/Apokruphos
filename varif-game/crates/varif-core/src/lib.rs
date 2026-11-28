@@ -12,10 +12,12 @@ pub mod calendar;
 pub mod character;
 pub mod command;
 pub mod data;
+pub mod dialogue;
 pub mod faction;
 pub mod ids;
 pub mod npc;
 pub mod rng;
+pub mod sandbox;
 pub mod schedule;
 pub mod sky;
 pub mod world;
@@ -32,16 +34,22 @@ pub use command::{
     Command, CommandError, Event, MemberFatigue, MAKE_CAMP_HOURS, MAX_TIME_SCALE, MIN_TIME_SCALE,
     PACK_UP_HOURS, REST_HOURS, UNTIRED_HOURS,
 };
-pub use data::{load_world, DataError};
+pub use data::{
+    check_person_file, check_tree, load_world, load_world_with_people, person_file_of,
+    person_file_text, read_people_dir, unreachable_nodes, DataError, PersonFile, ScheduleData,
+    SpanData, TreeProblem,
+};
+pub use dialogue::{Action, Choice, Compare, Condition, DialogueTree, Entry, Frame, Node, Sprite};
 pub use faction::{FactionId, Hostility, MAX_HOSTILITY, MIN_HOSTILITY};
 pub use ids::{PersonId, PlaceId, SiteId};
 pub use npc::{friendliness, Band, Bucket, DialogueLine, Standing, MIN_FRIENDLINESS_TO_TALK};
 pub use rng::Rng;
+pub use sandbox::{sandbox, SandboxSetup};
 pub use schedule::{RoadLeg, Schedule, Span, Whereabouts};
 pub use sky::{
     Minor, Sky, MAJORS_PER_NIGHT, MINORS_PER_NIGHT, MINOR_CONSTELLATIONS, SKY_TURNS_AT_HOUR,
 };
 pub use world::{
-    Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road, Route, Site,
-    SiteKind, Temple, TimeMode, World,
+    DialogueOption, Itinerary, JournalEntry, Journey, Person, Place, PlaceKind, Region, Road,
+    Route, Site, SiteKind, Temple, TimeMode, World,
 };

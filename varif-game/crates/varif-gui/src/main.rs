@@ -32,10 +32,10 @@ use layout::MapLayout;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs, path::Path, process};
 use varif_core::{
-    load_world, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage, Itinerary,
-    MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue, World,
-    BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_TIME_SCALE, MIN_AGE,
-    MIN_TIME_SCALE,
+    load_world_with_people, Akstada, Blood, Command, EffectKind, Event, FactionId, Heritage,
+    Itinerary, MemberFatigue, PersonId, Place, PlaceId, PlaceKind, Route, SiteId, SiteKind, Tongue,
+    World, BASE_FATIGUE, BASE_HEALTH, BASE_LEVEL, BASE_RESILIENCE, MAX_AGE, MAX_TIME_SCALE,
+    MIN_AGE, MIN_TIME_SCALE,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -94,13 +94,21 @@ fn main() {
 
     const WEB_DATA: &str = include_str!("../../../data/first_leg.ron");
     const WEB_LAYOUT: &str = include_str!("../../../data/map_layout.ron");
+    // The people files in data/people, embedded by build.rs as a slice
+    // expression.
+    const PEOPLE: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/people.rs"));
 
     // Panics show up in the browser's console instead of vanishing.
     std::panic::set_hook(Box::new(|info| {
         eframe::web_sys::console::error_1(&info.to_string().into());
     }));
 
-    let world = load_world(WEB_DATA).expect("the built-in data file should load");
+    let people: Vec<(String, String)> = PEOPLE
+        .iter()
+        .map(|(key, text)| (key.to_string(), text.to_string()))
+        .collect();
+    let world = load_world_with_people(WEB_DATA, &people)
+        .expect("the built-in data file and people files should load");
     let (layout, layout_note) = match MapLayout::from_text(WEB_LAYOUT) {
         Ok(layout) => (layout, None),
         Err(error) => (
@@ -153,7 +161,9 @@ fn main() {
 #[cfg(not(target_arch = "wasm32"))]
 fn read_data(path: &str) -> Result<World, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    load_world(&text).map_err(|e| e.to_string())
+    let people = varif_core::read_people_dir(&Path::new(path).with_file_name("people"))
+        .map_err(|e| format!("could not read the people files beside {path}: {e}"))?;
+    load_world_with_people(&text, &people).map_err(|e| e.to_string())
 }
 
 /// Something a click asks for. Drawing only collects one of these; it is
@@ -349,7 +359,10 @@ impl App {
                 if changed_scale {
                     self.real_carry_ms = 0;
                 }
-                for event in &events {
+                for (i, event) in events.iter().enumerate() {
+                    if said_nothing_before_leaving(&events, i) {
+                        continue;
+                    }
                     let line = describe(&self.world, event);
                     let timescale = matches!(event, Event::TimeScaleChanged { .. });
                     if timescale
@@ -1089,14 +1102,18 @@ fn question(
                 )),
                 None => ui.strong(format!("Talking with {name}.")),
             };
+            if let Some(line) = world.npc_line() {
+                ui.label(format!("\"{line}\""));
+            }
             let options = world.dialogue_options(person);
             if options.is_empty() {
                 ui.weak("There is nothing to say.");
             }
             for (index, line) in options.iter().enumerate() {
-                let button = ui
-                    .button(format!("\"{}\"", line.text))
-                    .on_hover_text(line.bucket.name());
+                let mut button = ui.button(format!("\"{}\"", line.text));
+                if !line.label.is_empty() {
+                    button = button.on_hover_text(&line.label);
+                }
                 if button.clicked() {
                     *action = Some(Action::Send(Command::Say { line: index }));
                 }
@@ -1750,6 +1767,19 @@ fn overlap(a: &egui::Rect, b: &egui::Rect) -> f32 {
     }
 }
 
+/// True for a `Said` with an empty reply that a `ConversationEnded` for the
+/// same person follows in the same batch. "Says nothing" would read oddly
+/// just before "You leave".
+fn said_nothing_before_leaving(events: &[Event], index: usize) -> bool {
+    let Event::Said { person, reply, .. } = &events[index] else {
+        return false;
+    };
+    reply.trim().is_empty()
+        && events[index + 1..]
+            .iter()
+            .any(|e| matches!(e, Event::ConversationEnded { person: left } if left == person))
+}
+
 /// The same wording as the command-line program, so the two logs read alike.
 fn describe(world: &World, event: &Event) -> String {
     match event {
@@ -1845,11 +1875,49 @@ fn describe(world: &World, event: &Event) -> String {
             "{} is here, and could join the party.",
             person_name(world, *person)
         ),
-        Event::ConversationOpened { person, standing } => format!(
-            "You speak with {} (friendliness {}).",
-            person_name(world, *person),
-            standing.friendliness
+        Event::ConversationOpened {
+            person,
+            standing,
+            opening,
+        } => {
+            let started = format!(
+                "You speak with {} (friendliness {}).",
+                person_name(world, *person),
+                standing.friendliness
+            );
+            if opening.is_empty() {
+                started
+            } else {
+                format!("{started}  {}: \"{opening}\"", person_name(world, *person))
+            }
+        }
+        Event::FlagSet { flag } => format!("Flag set: {flag}."),
+        Event::FlagCleared { flag } => format!("Flag cleared: {flag}."),
+        Event::ItemGiven {
+            person,
+            item,
+            count,
+        } => format!("{} gives you {count} {item}.", person_name(world, *person)),
+        Event::ItemTaken {
+            person,
+            item,
+            count,
+        } => format!("You give {} {count} {item}.", person_name(world, *person)),
+        Event::ItemGranted { item, count } => format!("You receive {count} {item}."),
+        Event::CombatStarted { person } => format!(
+            "{} attacks. Combat would start here, but it is not built yet.",
+            person_name(world, *person)
         ),
+        Event::RecruitableChanged {
+            person,
+            recruitable,
+        } => {
+            if *recruitable {
+                format!("{} could now join the party.", person_name(world, *person))
+            } else {
+                format!("{} will not join the party.", person_name(world, *person))
+            }
+        }
         Event::Said {
             person,
             text,

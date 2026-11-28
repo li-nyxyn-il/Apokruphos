@@ -4,11 +4,12 @@
 //! `cargo run -- data/first_leg.ron`.
 
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::time::Instant;
 use std::{env, fs, process};
 use varif_core::{
-    game_minutes, load_world, AdvanceKind, Command, EquipSlot, Event, Itinerary, MemberFatigue,
-    PersonId, Place, PlaceId, TimeMode, World, MAX_TIME_SCALE, MIN_TIME_SCALE,
+    game_minutes, load_world_with_people, AdvanceKind, Command, EquipSlot, Event, Itinerary,
+    MemberFatigue, PersonId, Place, PlaceId, TimeMode, World, MAX_TIME_SCALE, MIN_TIME_SCALE,
 };
 
 const DEFAULT_DATA: &str = "data/first_leg.ron";
@@ -81,7 +82,14 @@ fn main() {
             process::exit(1);
         }
     };
-    let mut world = match load_world(&text) {
+    let people = match varif_core::read_people_dir(&Path::new(&path).with_file_name("people")) {
+        Ok(people) => people,
+        Err(error) => {
+            eprintln!("Could not read the people files beside {path}: {error}");
+            process::exit(1);
+        }
+    };
+    let mut world = match load_world_with_people(&text, &people) {
         Ok(world) => world,
         Err(error) => {
             eprintln!("Could not load {path}: {error}");
@@ -179,8 +187,9 @@ fn main() {
                 }
                 _ => match answer.parse::<usize>() {
                     Ok(n) if n >= 1 && n <= world.dialogue_options(person).len() => {
+                        // The reply was just printed, so only the choices follow.
                         if run(&mut world, Command::Say { line: n - 1 }) {
-                            show_options(&world, person);
+                            show_choices(&world, person);
                         }
                     }
                     _ => println!("Answer with the number of a line, or bye to leave."),
@@ -396,7 +405,10 @@ enum Asking {
 fn run(world: &mut World, command: Command) -> bool {
     match world.apply(command) {
         Ok(events) => {
-            for event in &events {
+            for (i, event) in events.iter().enumerate() {
+                if said_nothing_before_leaving(&events, i) {
+                    continue;
+                }
                 println!("{}", describe(world, event));
             }
             true
@@ -613,11 +625,40 @@ fn describe(world: &World, event: &Event) -> String {
         Event::Recruited { person, .. } => {
             format!("{} joins the party.", person_name(world, *person))
         }
-        Event::ConversationOpened { person, standing } => format!(
+        Event::ConversationOpened {
+            person, standing, ..
+        } => format!(
             "You speak with {} (friendliness {}).",
             person_name(world, *person),
             standing.friendliness
         ),
+        Event::FlagSet { flag } => format!("Flag set: {flag}."),
+        Event::FlagCleared { flag } => format!("Flag cleared: {flag}."),
+        Event::ItemGiven {
+            person,
+            item,
+            count,
+        } => format!("{} gives you {count} {item}.", person_name(world, *person)),
+        Event::ItemTaken {
+            person,
+            item,
+            count,
+        } => format!("You give {} {count} {item}.", person_name(world, *person)),
+        Event::ItemGranted { item, count } => format!("You receive {count} {item}."),
+        Event::CombatStarted { person } => format!(
+            "{} attacks. Combat would start here, but it is not built yet.",
+            person_name(world, *person)
+        ),
+        Event::RecruitableChanged {
+            person,
+            recruitable,
+        } => {
+            if *recruitable {
+                format!("{} could now join the party.", person_name(world, *person))
+            } else {
+                format!("{} will not join the party.", person_name(world, *person))
+            }
+        }
         Event::Said {
             person,
             text,
@@ -1179,7 +1220,32 @@ fn interact(world: &mut World, rest: &str) {
 
 /// Prints the lines the player can say to `person` right now, numbered.
 fn show_options(world: &World, person: PersonId) {
+    if let Some(line) = world.npc_line() {
+        println!("{}: \"{line}\"", person_name(world, person));
+    }
+    show_choices(world, person);
+}
+
+/// True for a `Said` with an empty reply that a `ConversationEnded` for the
+/// same person follows in the same batch. "Says nothing" would read oddly
+/// just before "You leave".
+fn said_nothing_before_leaving(events: &[Event], index: usize) -> bool {
+    let Event::Said { person, reply, .. } = &events[index] else {
+        return false;
+    };
+    reply.trim().is_empty()
+        && events[index + 1..]
+            .iter()
+            .any(|e| matches!(e, Event::ConversationEnded { person: left } if left == person))
+}
+
+/// Prints the numbered lines the player can say to `person`.
+fn show_choices(world: &World, person: PersonId) {
     for (i, line) in world.dialogue_options(person).iter().enumerate() {
-        println!("  {}. \"{}\"  [{}]", i + 1, line.text, line.bucket.name());
+        if line.label.is_empty() {
+            println!("  {}. \"{}\"", i + 1, line.text);
+        } else {
+            println!("  {}. \"{}\"  [{}]", i + 1, line.text, line.label);
+        }
     }
 }
