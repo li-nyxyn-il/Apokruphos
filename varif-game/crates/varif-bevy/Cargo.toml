@@ -1,0 +1,13 @@
+[package]
+name = "varif-bevy"
+version.workspace = true
+edition.workspace = true
+description = "A Bevy front end for the Varif world model."
+
+[[bin]]
+name = "varif-bevy"
+path = "src/main.rs"
+
+[dependencies]
+varif-core = { path = "../varif-core" }
+bevy.workspace = true

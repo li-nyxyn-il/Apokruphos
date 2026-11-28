@@ -42,6 +42,7 @@ trunk serve --address 0.0.0.0    # http://localhost:8080, or this computer's add
 | `crates/varif-core` | The library: types, rules, commands and events |
 | `crates/varif-cli` | The command-line front end (the `varif` program) |
 | `crates/varif-gui` | The window, built on egui (the `varif-gui` program) |
+| `crates/varif-bevy` | A Bevy front end (the `varif-bevy` program); run with `cargo bevy` |
 | `crates/varif-gui/index.html` | The page the web build runs in |
 | `data/first_leg.ron` | The first leg of the Pylgrymage, Yhlgrym to Atzhaim, as data |
 | `data/map_layout.ron` | Where each place is drawn on the window's map, in pixels of the Umbara map |
