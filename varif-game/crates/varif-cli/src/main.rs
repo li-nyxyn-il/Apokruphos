@@ -613,17 +613,49 @@ fn describe(world: &World, event: &Event) -> String {
         Event::Recruited { person, .. } => {
             format!("{} joins the party.", person_name(world, *person))
         }
-        Event::ConversationOpened { person, standing } => format!(
+        Event::ConversationOpened {
+            person, standing, ..
+        } => format!(
             "You speak with {} (friendliness {}).",
             person_name(world, *person),
             standing.friendliness
         ),
+        Event::FlagSet { flag } => format!("Flag set: {flag}."),
+        Event::FlagCleared { flag } => format!("Flag cleared: {flag}."),
+        Event::ItemGiven {
+            person,
+            item,
+            count,
+        } => format!("{} gives you {count} {item}.", person_name(world, *person)),
+        Event::ItemTaken {
+            person,
+            item,
+            count,
+        } => format!("You give {} {count} {item}.", person_name(world, *person)),
+        Event::ItemGranted { item, count } => format!("You receive {count} {item}."),
+        Event::CombatStarted { person } => format!(
+            "{} attacks. Combat would start here, but it is not built yet.",
+            person_name(world, *person)
+        ),
+        Event::RecruitableChanged {
+            person,
+            recruitable,
+        } => {
+            if *recruitable {
+                format!("{} could now join the party.", person_name(world, *person))
+            } else {
+                format!("{} will not join the party.", person_name(world, *person))
+            }
+        }
         Event::Said {
             person,
             text,
             reply,
         } => {
-            if reply.trim().is_empty() {
+            if world.npc_line() == Some(reply.as_str()) {
+                // A tree node: the options listing shows what they said.
+                format!("You: \"{text}\"")
+            } else if reply.trim().is_empty() {
                 format!("You: \"{text}\"
 {} says nothing.", person_name(world, *person))
             } else {
@@ -1179,7 +1211,14 @@ fn interact(world: &mut World, rest: &str) {
 
 /// Prints the lines the player can say to `person` right now, numbered.
 fn show_options(world: &World, person: PersonId) {
+    if let Some(line) = world.npc_line() {
+        println!("{}: \"{line}\"", person_name(world, person));
+    }
     for (i, line) in world.dialogue_options(person).iter().enumerate() {
-        println!("  {}. \"{}\"  [{}]", i + 1, line.text, line.bucket.name());
+        if line.label.is_empty() {
+            println!("  {}. \"{}\"", i + 1, line.text);
+        } else {
+            println!("  {}. \"{}\"  [{}]", i + 1, line.text, line.label);
+        }
     }
 }

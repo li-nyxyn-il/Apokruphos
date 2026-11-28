@@ -322,12 +322,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
                 owner: format!("{}'s dialogue", person.name),
             });
         }
-        let schedule = load_schedule(
-            &person.name,
-            &person.schedule,
-            &data.places,
-            &lookup,
-        )?;
+        let schedule = load_schedule(&person.name, &person.schedule, &data.places, &lookup)?;
         let place = &data.places[at.index()];
         let site = match person.site.as_deref() {
             Some(key) => Some(place.find_site(key).ok_or_else(|| DataError::UnknownSite {
@@ -378,6 +373,7 @@ pub fn load_world(text: &str) -> Result<World, DataError> {
         hostility: Hostility::starting(),
         dialogue: data.dialogue,
         conversation: None,
+        conversation_node: None,
         sky: Sky::new(start.seed),
         flags: BTreeSet::new(),
     })
@@ -402,11 +398,15 @@ fn load_schedule(
         let site = match span.site.as_deref() {
             Some(key) => {
                 let place_data = &places[place.index()];
-                Some(place_data.find_site(key).ok_or_else(|| DataError::UnknownSite {
-                    person: person.to_string(),
-                    place: place_data.name.clone(),
-                    site: key.to_string(),
-                })?)
+                Some(
+                    place_data
+                        .find_site(key)
+                        .ok_or_else(|| DataError::UnknownSite {
+                            person: person.to_string(),
+                            place: place_data.name.clone(),
+                            site: key.to_string(),
+                        })?,
+                )
             }
             None => None,
         };

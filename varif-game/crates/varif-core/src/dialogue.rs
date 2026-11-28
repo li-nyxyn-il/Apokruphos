@@ -109,14 +109,23 @@ pub enum Condition {
     InParty,
     Recruitable,
     /// The player's pack holds at least `count` of the named item.
-    PlayerHas { item: String, count: u32 },
+    PlayerHas {
+        item: String,
+        count: u32,
+    },
     /// The NPC's pack holds at least `count` of the named item.
-    NpcHas { item: String, count: u32 },
+    NpcHas {
+        item: String,
+        count: u32,
+    },
     /// A flag is set in the world.
     Flag(String),
     /// The world clock is in the hours, ends included. Wraps past midnight
     /// when `from` is after `to`.
-    HourBetween { from: u32, to: u32 },
+    HourBetween {
+        from: u32,
+        to: u32,
+    },
     /// The party stands at the site with this key.
     PartyAtSite(String),
 }
@@ -133,9 +142,15 @@ pub enum Action {
         by: i32,
     },
     /// The NPC's pack to the player's.
-    GiveItem { item: String, count: u32 },
+    GiveItem {
+        item: String,
+        count: u32,
+    },
     /// The player's pack to the NPC's.
-    TakeItem { item: String, count: u32 },
+    TakeItem {
+        item: String,
+        count: u32,
+    },
     /// Made from nothing and given to the player.
     GrantItem(Item),
     /// Takes the NPC into the party, whether or not they are recruitable.

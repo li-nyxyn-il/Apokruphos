@@ -1089,14 +1089,18 @@ fn question(
                 )),
                 None => ui.strong(format!("Talking with {name}.")),
             };
+            if let Some(line) = world.npc_line() {
+                ui.label(format!("\"{line}\""));
+            }
             let options = world.dialogue_options(person);
             if options.is_empty() {
                 ui.weak("There is nothing to say.");
             }
             for (index, line) in options.iter().enumerate() {
-                let button = ui
-                    .button(format!("\"{}\"", line.text))
-                    .on_hover_text(line.bucket.name());
+                let mut button = ui.button(format!("\"{}\"", line.text));
+                if !line.label.is_empty() {
+                    button = button.on_hover_text(&line.label);
+                }
                 if button.clicked() {
                     *action = Some(Action::Send(Command::Say { line: index }));
                 }
@@ -1845,11 +1849,49 @@ fn describe(world: &World, event: &Event) -> String {
             "{} is here, and could join the party.",
             person_name(world, *person)
         ),
-        Event::ConversationOpened { person, standing } => format!(
-            "You speak with {} (friendliness {}).",
-            person_name(world, *person),
-            standing.friendliness
+        Event::ConversationOpened {
+            person,
+            standing,
+            opening,
+        } => {
+            let started = format!(
+                "You speak with {} (friendliness {}).",
+                person_name(world, *person),
+                standing.friendliness
+            );
+            if opening.is_empty() {
+                started
+            } else {
+                format!("{started}  {}: \"{opening}\"", person_name(world, *person))
+            }
+        }
+        Event::FlagSet { flag } => format!("Flag set: {flag}."),
+        Event::FlagCleared { flag } => format!("Flag cleared: {flag}."),
+        Event::ItemGiven {
+            person,
+            item,
+            count,
+        } => format!("{} gives you {count} {item}.", person_name(world, *person)),
+        Event::ItemTaken {
+            person,
+            item,
+            count,
+        } => format!("You give {} {count} {item}.", person_name(world, *person)),
+        Event::ItemGranted { item, count } => format!("You receive {count} {item}."),
+        Event::CombatStarted { person } => format!(
+            "{} attacks. Combat would start here, but it is not built yet.",
+            person_name(world, *person)
         ),
+        Event::RecruitableChanged {
+            person,
+            recruitable,
+        } => {
+            if *recruitable {
+                format!("{} could now join the party.", person_name(world, *person))
+            } else {
+                format!("{} will not join the party.", person_name(world, *person))
+            }
+        }
         Event::Said {
             person,
             text,

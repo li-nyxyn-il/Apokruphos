@@ -182,7 +182,7 @@ fn interacting_opens_a_conversation_with_the_lines_on_offer() {
     let events = world.apply(Command::Interact { person: jonnoj }).unwrap();
     assert!(matches!(
         events[..],
-        [Event::ConversationOpened { person, standing }]
+        [Event::ConversationOpened { person, standing, .. }]
             if person == jonnoj && standing.friendliness == 50
     ));
     assert_eq!(world.conversation, Some(jonnoj));

@@ -2,9 +2,10 @@
 
 use crate::calendar::{Date, HOURS_PER_DAY, MINUTES_PER_HOUR};
 use crate::character::{
-    EffectKind, EffectPayload, EquipSlot, Equipped, Item, ItemType, Role, BASE_FATIGUE,
+    Character, EffectKind, EffectPayload, EquipSlot, Equipped, Item, ItemType, Role, BASE_FATIGUE,
     MAX_ATTITUDE, MIN_ATTITUDE,
 };
+use crate::dialogue::{Action, DialogueTree};
 use crate::faction::{FactionId, MAX_HOSTILITY, MIN_HOSTILITY};
 use crate::ids::{PersonId, PlaceId, SiteId};
 use crate::npc::Standing;
@@ -361,6 +362,9 @@ pub enum Event {
     ConversationOpened {
         person: PersonId,
         standing: Standing,
+        /// What the NPC says first: the line of the entry node of their
+        /// dialogue tree. Blank for flat lines.
+        opening: String,
     },
     /// The player said a line, and the NPC answered with `reply`, which may be
     /// blank.
@@ -371,6 +375,41 @@ pub enum Event {
     },
     ConversationEnded {
         person: PersonId,
+    },
+    /// A dialogue action set a world flag.
+    FlagSet {
+        flag: String,
+    },
+    /// A dialogue action cleared a world flag.
+    FlagCleared {
+        flag: String,
+    },
+    /// An NPC handed items from their pack to the player.
+    ItemGiven {
+        person: PersonId,
+        item: String,
+        count: u32,
+    },
+    /// The player handed items from the pack to an NPC.
+    ItemTaken {
+        person: PersonId,
+        item: String,
+        count: u32,
+    },
+    /// Items were made from nothing and given to the player.
+    ItemGranted {
+        item: String,
+        count: u32,
+    },
+    /// A conversation ended in a fight. COMBAT: combat is its own system and
+    /// is not built yet, so for now this event is all that happens.
+    CombatStarted {
+        person: PersonId,
+    },
+    /// An NPC became willing, or unwilling, to join the party.
+    RecruitableChanged {
+        person: PersonId,
+        recruitable: bool,
     },
     /// The NPC is too hostile to talk to, so interacting with them starts
     /// combat. COMBAT: combat is its own system and is not built yet, so for
@@ -476,6 +515,12 @@ pub enum CommandError {
     NotInConversation,
     /// No line on offer has this number.
     UnknownLine(usize),
+    /// The NPC has a dialogue tree, but none of its entries holds, so they
+    /// have nothing to say.
+    NothingToSay,
+    /// An action of a dialogue choice could not be carried out, so none of
+    /// the choice took effect. Holds the reason.
+    ActionFailed(String),
     /// A wait was not from 1 to 24 hours.
     BadWait,
     /// A time scale was not from 1 to 60.
@@ -552,6 +597,10 @@ impl fmt::Display for CommandError {
             }
             CommandError::NotInConversation => write!(f, "the player is not talking to anyone"),
             CommandError::UnknownLine(n) => write!(f, "there is no line {n} to say"),
+            CommandError::NothingToSay => write!(f, "they have nothing to say to you"),
+            CommandError::ActionFailed(why) => {
+                write!(f, "the choice could not be carried out: {why}")
+            }
             CommandError::BadWait => write!(f, "wait from 1 to 24 hours"),
             CommandError::BadTimeScale => write!(f, "the time scale must be from 1 to 60"),
         }
@@ -559,6 +608,11 @@ impl fmt::Display for CommandError {
 }
 
 impl std::error::Error for CommandError {}
+
+/// The error for a dialogue tree that points at a node it does not have.
+fn missing_node(key: &str) -> CommandError {
+    CommandError::ActionFailed(format!("the dialogue has no node called \"{key}\""))
+}
 
 impl World {
     /// The single entry point for changing the world.
@@ -680,19 +734,38 @@ impl World {
                 friendliness: standing.friendliness,
             }]);
         }
+        let (node, opening) = match &person.tree {
+            None => (None, String::new()),
+            Some(tree) => {
+                let entry = tree
+                    .entries
+                    .iter()
+                    .find(|entry| entry.when.holds(self, id))
+                    .ok_or(CommandError::NothingToSay)?;
+                let node = tree
+                    .node(&entry.node)
+                    .ok_or_else(|| missing_node(&entry.node))?;
+                (Some(node.key.clone()), node.line.clone())
+            }
+        };
         self.conversation = Some(id);
+        self.conversation_node = node;
         Ok(vec![Event::ConversationOpened {
             person: id,
             standing,
+            opening,
         }])
     }
 
     fn say(&mut self, line: usize) -> Result<Vec<Event>, CommandError> {
         let person = self.conversation.ok_or(CommandError::NotInConversation)?;
+        if let Some(tree) = self.person(person).and_then(|p| p.tree.clone()) {
+            return self.say_from_tree(person, &tree, line);
+        }
         let said = self
-            .dialogue_options(person)
+            .open_lines(person)
             .get(line)
-            .map(|l| (l.text.clone(), l.reply.clone()))
+            .map(|said| (said.text.clone(), said.reply.clone()))
             .ok_or(CommandError::UnknownLine(line))?;
         Ok(vec![Event::Said {
             person,
@@ -701,11 +774,195 @@ impl World {
         }])
     }
 
+    /// Runs the `line`-th offered choice of `tree`: its actions, then on to
+    /// the next node or the end of the conversation.
+    fn say_from_tree(
+        &mut self,
+        person: PersonId,
+        tree: &DialogueTree,
+        line: usize,
+    ) -> Result<Vec<Event>, CommandError> {
+        let choice = self
+            .offered_choices(person)
+            .get(line)
+            .map(|choice| (*choice).clone())
+            .ok_or(CommandError::UnknownLine(line))?;
+        let next = match &choice.next {
+            Some(key) => Some(tree.node(key).ok_or_else(|| missing_node(key))?),
+            None => None,
+        };
+        let action_events = self.apply_actions(person, &choice.actions)?;
+        let fight = action_events
+            .iter()
+            .any(|event| matches!(event, Event::CombatStarted { .. }));
+        let next = if fight { None } else { next };
+        let mut events = vec![Event::Said {
+            person,
+            text: choice.text,
+            reply: next.map(|node| node.line.clone()).unwrap_or_default(),
+        }];
+        events.extend(action_events);
+        match next {
+            Some(node) => self.conversation_node = Some(node.key.clone()),
+            None => {
+                self.conversation = None;
+                self.conversation_node = None;
+                events.push(Event::ConversationEnded { person });
+            }
+        }
+        Ok(events)
+    }
+
+    /// Runs the actions of a dialogue choice in order for the NPC `npc`. All
+    /// of them take effect, or none: they run on a copy of the world, which
+    /// replaces this one only when every action succeeded.
+    fn apply_actions(
+        &mut self,
+        npc: PersonId,
+        actions: &[Action],
+    ) -> Result<Vec<Event>, CommandError> {
+        let mut trial = self.clone();
+        let mut events = Vec::new();
+        for action in actions {
+            events.extend(
+                trial
+                    .apply_action(npc, action)
+                    .map_err(|error| CommandError::ActionFailed(error.to_string()))?,
+            );
+        }
+        *self = trial;
+        Ok(events)
+    }
+
+    fn apply_action(&mut self, npc: PersonId, action: &Action) -> Result<Vec<Event>, CommandError> {
+        match action {
+            Action::ChangeAttitude(by) => {
+                let current = self.standing(npc).ok_or(CommandError::NoAttitude)?.attitude;
+                let index = (i64::from(current) + i64::from(*by))
+                    .clamp(i64::from(MIN_ATTITUDE), i64::from(MAX_ATTITUDE));
+                self.set_attitude(npc, index as u32)
+            }
+            Action::SetAttitude(index) => self.set_attitude(npc, *index),
+            Action::ChangeHostility { from, toward, by } => {
+                let current = self.hostility_toward(*from, *toward);
+                let index = (i64::from(current) + i64::from(*by))
+                    .clamp(i64::from(MIN_HOSTILITY), i64::from(MAX_HOSTILITY));
+                self.set_hostility(*from, *toward, index as u32)
+            }
+            Action::GiveItem { item, count } => {
+                let player = self.player_index()?;
+                self.move_item(npc.index(), player, item, *count)?;
+                Ok(vec![Event::ItemGiven {
+                    person: npc,
+                    item: item.clone(),
+                    count: *count,
+                }])
+            }
+            Action::TakeItem { item, count } => {
+                let player = self.player_index()?;
+                self.move_item(player, npc.index(), item, *count)?;
+                Ok(vec![Event::ItemTaken {
+                    person: npc,
+                    item: item.clone(),
+                    count: *count,
+                }])
+            }
+            Action::GrantItem(item) => {
+                let player = self.player_index()?;
+                let event = Event::ItemGranted {
+                    item: item.name.clone(),
+                    count: item.count,
+                };
+                self.sheet_mut(player)?.carry(item.clone());
+                Ok(vec![event])
+            }
+            Action::Recruit => {
+                // The NPC stands where the party does, or they could not be
+                // talked to, so only `recruitable` needs setting aside.
+                self.people
+                    .get_mut(npc.index())
+                    .ok_or(CommandError::UnknownPerson(npc))?
+                    .recruitable = true;
+                self.recruit(npc)
+            }
+            Action::SetRecruitable(recruitable) => {
+                self.people
+                    .get_mut(npc.index())
+                    .ok_or(CommandError::UnknownPerson(npc))?
+                    .recruitable = *recruitable;
+                Ok(vec![Event::RecruitableChanged {
+                    person: npc,
+                    recruitable: *recruitable,
+                }])
+            }
+            Action::SetFlag(flag) => {
+                self.flags.insert(flag.clone());
+                Ok(vec![Event::FlagSet { flag: flag.clone() }])
+            }
+            Action::ClearFlag(flag) => {
+                self.flags.remove(flag);
+                Ok(vec![Event::FlagCleared { flag: flag.clone() }])
+            }
+            Action::WriteJournal(text) => self.write_journal(text.clone()),
+            // COMBAT: combat is not built yet, so this only says it began.
+            Action::StartCombat => Ok(vec![Event::CombatStarted { person: npc }]),
+        }
+    }
+
+    /// The sheet of the person at `index`.
+    fn sheet_mut(&mut self, index: usize) -> Result<&mut Character, CommandError> {
+        self.people
+            .get_mut(index)
+            .and_then(|person| person.sheet.as_mut())
+            .ok_or(CommandError::NoAttitude)
+    }
+
+    /// Moves `count` of the item called `name` from the pack of the person
+    /// at `from` to the pack of the person at `to`. The moved items keep
+    /// the stack's weight, value and effects.
+    fn move_item(
+        &mut self,
+        from: usize,
+        to: usize,
+        name: &str,
+        count: u32,
+    ) -> Result<(), CommandError> {
+        let giver = self.sheet_mut(from)?;
+        let held = giver
+            .inventory
+            .iter()
+            .filter(|item| item.name == name)
+            .fold(0u32, |sum, item| sum.saturating_add(item.count));
+        if held < count {
+            return Err(CommandError::NotCarrying(name.to_string()));
+        }
+        let Some(mut moved) = giver
+            .inventory
+            .iter()
+            .find(|item| item.name == name)
+            .cloned()
+        else {
+            // A count of zero of something the pack does not hold moves nothing.
+            return Ok(());
+        };
+        moved.count = count;
+        let mut left = count;
+        for stack in giver.inventory.iter_mut().filter(|item| item.name == name) {
+            let taken = stack.count.min(left);
+            stack.count -= taken;
+            left -= taken;
+        }
+        giver.inventory.retain(|item| item.count > 0);
+        self.sheet_mut(to)?.carry(moved);
+        Ok(())
+    }
+
     fn end_conversation(&mut self) -> Result<Vec<Event>, CommandError> {
         let person = self
             .conversation
             .take()
             .ok_or(CommandError::NotInConversation)?;
+        self.conversation_node = None;
         Ok(vec![Event::ConversationEnded { person }])
     }
 
